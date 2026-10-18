@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cannon Battle — Progress</title>
+<style>
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #1a1a2e;
+    color: #eee;
+    margin: 0;
+    padding: 24px;
+  }
+  h1 { margin: 0 0 4px; font-size: 1.6em; }
+  h2 { font-size: 1.15em; color: #ffd23f; margin: 28px 0 10px; }
+  .summary { color: #aaa; margin-bottom: 8px; }
+  a.back { color: #7cc9ff; text-decoration: none; font-size: 0.9em; }
+
+  #stat-cards {
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+  .stat-card {
+    background: #23233f;
+    border-radius: 10px;
+    padding: 14px 18px;
+    min-width: 160px;
+  }
+  .stat-card h3 { margin: 0 0 8px; font-size: 1em; }
+  .stat-card .row { display: flex; justify-content: space-between; font-size: 0.9em; color: #ccd; padding: 2px 0; }
+  .p1 h3 { color: #7cc9ff; }
+  .p2 h3 { color: #ff9f7c; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #23233f;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid #33335a; }
+  th {
+    background: #2d2d55;
+    font-size: 0.85em;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #aab;
+  }
+  tr.session-start td { border-top: 2px solid #ffd23f; }
+  .p1 { color: #7cc9ff; }
+  .p2 { color: #ff9f7c; }
+  .ok { color: #36e07a; }
+  .bad { color: #ff6b6b; }
+  .empty { text-align: center; color: #888; padding: 40px; }
+</style>
+</head>
+<body>
+
+<a class="back" href="index.html">&larr; Back to game</a>
+<h1>Cannon Battle — Progress</h1>
+<p class="summary" id="summary">Loading…</p>
+
+<h2>Gunners</h2>
+<div id="stat-cards"></div>
+
+<h2>Shot log</h2>
+<table id="table" style="display:none">
+  <thead>
+    <tr>
+      <th>Date</th>
+      <th>Player</th>
+      <th>Level</th>
+      <th>Cannon</th>
+      <th>Setup</th>
+      <th>Result</th>
+      <th>Sunk?</th>
+    </tr>
+  </thead>
+  <tbody id="tbody"></tbody>
+</table>
+
+<p class="empty" id="empty" style="display:none">No shots logged yet — go play!</p>
+
+<script src="/names.js"></script>
+<script>
+var PN = Object.assign({ P1: 'Player 1', P2: 'Player 2', P3: 'Player 3' }, window.PLAYER_NAMES || {});
+var CANNON_LABELS = { six: '6-POUNDER', twelve: '12-POUNDER', twentyfour: '24-POUNDER' };
+
+fetch('/api/sessions?game=cannon-battle')
+  .then(function (r) { return r.json(); })
+  .then(function (records) {
+    records.sort(function (a, b) {
+      return new Date(b.server_timestamp || 0) - new Date(a.server_timestamp || 0);
+    });
+
+    if (!records.length) {
+      document.getElementById('empty').style.display = '';
+      document.getElementById('summary').textContent = '';
+      renderStats({});
+      return;
+    }
+
+    var sessionIds = {};
+    records.forEach(function (r) { sessionIds[r.session_id] = true; });
+    var sessionCount = Object.keys(sessionIds).length;
+    var hitCount = records.filter(function (r) { return r.hit; }).length;
+    var fleetsCleared = records.filter(function (r) { return r.fleetCleared; }).length;
+
+    document.getElementById('summary').textContent =
+      records.length + ' shot' + (records.length === 1 ? '' : 's') + ' (' + hitCount + ' hit' + (hitCount === 1 ? '' : 's') + ') across ' +
+      sessionCount + ' session' + (sessionCount === 1 ? '' : 's') + ' — ' + fleetsCleared + ' fleet' + (fleetsCleared === 1 ? '' : 's') + ' sunk';
+
+    var stats = {};
+    records.forEach(function (r) {
+      var p = r.player || '—';
+      var s = stats[p] || { shots: 0, hits: 0, sunk: 0 };
+      s.shots++;
+      if (r.hit) s.hits++;
+      if (r.sunk) s.sunk++;
+      stats[p] = s;
+    });
+    renderStats(stats);
+
+    var tbody = document.getElementById('tbody');
+    var lastSession = null;
+
+    records.forEach(function (r) {
+      var tr = document.createElement('tr');
+      if (r.session_id !== lastSession) {
+        tr.className = 'session-start';
+        lastSession = r.session_id;
+      }
+
+      var date = r.server_timestamp ? new Date(r.server_timestamp) : null;
+      var dateStr = date ? date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) +
+        ' ' + date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : '—';
+
+      var playerClass = String(r.player || '').toLowerCase();
+      var setup = r.col != null
+        ? r.col + '×' + r.row + '=' + (r.col * r.row) + (r.fuse ? ' · fuse ' + r.fuse : '')
+        : r.powder + '×' + r.elevation + '=' + r.mark + ' @ B' + r.bearing;
+      var levelVal = r.level != null ? r.level : (r.tier != null ? r.tier : '—');
+
+      // Every record here came from a POST to /api/track, which the
+      // server stores (and this page reads back) with no schema
+      // validation on field values -- textContent, never innerHTML, so a
+      // crafted record can't inject markup that runs on everyone's next
+      // visit to this page.
+      function td(text, className) {
+        var el = document.createElement('td');
+        el.textContent = text;
+        if (className) el.className = className;
+        return el;
+      }
+
+      tr.appendChild(td(dateStr));
+      tr.appendChild(td(PN[r.player] || r.player || '—', playerClass));
+      tr.appendChild(td(levelVal));
+      tr.appendChild(td(CANNON_LABELS[r.cannon] || r.cannon || '—'));
+      tr.appendChild(td(setup));
+      tr.appendChild(td(r.hit ? '🎯 hit' : '✗ miss', r.hit ? 'ok' : 'bad'));
+      tr.appendChild(td(r.sunk ? '☠️ sunk' : ''));
+
+      tbody.appendChild(tr);
+    });
+
+    document.getElementById('table').style.display = '';
+  })
+  .catch(function () {
+    document.getElementById('summary').textContent = 'Could not load progress — is the game server running?';
+    renderStats({});
+  });
+
+function renderStats(stats) {
+  var el = document.getElementById('stat-cards');
+  el.innerHTML = '';
+  var players = ['P1', 'P2'];
+  players.forEach(function (p) {
+    var s = stats[p] || { shots: 0, hits: 0, sunk: 0 };
+    var acc = s.shots ? Math.round(100 * s.hits / s.shots) : 0;
+    var card = document.createElement('div');
+    card.className = 'stat-card ' + p.toLowerCase();
+    card.innerHTML =
+      '<h3>' + PN[p] + '</h3>' +
+      '<div class="row"><span>Shots</span><span>' + s.shots + '</span></div>' +
+      '<div class="row"><span>Hits</span><span>' + s.hits + '</span></div>' +
+      '<div class="row"><span>Accuracy</span><span>' + acc + '%</span></div>' +
+      '<div class="row"><span>Ships sunk</span><span>' + s.sunk + '</span></div>';
+    el.appendChild(card);
+  });
+}
+</script>
+
+</body>
+</html>

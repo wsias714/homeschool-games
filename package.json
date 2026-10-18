@@ -1,0 +1,8 @@
+{
+  "name": "homeschool-games",
+  "private": true,
+  "scripts": {
+    "test": "node cannon-battle/smoke-test.js && node dino-roar/smoke-test.js && node sound-it-out/smoke-test.js && node times-tables/smoke-test.js && python3 -m unittest discover -s server/tests",
+    "check": "npm test"
+  }
+}

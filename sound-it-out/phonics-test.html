@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Phonics Tester — Sound It Out</title>
+<style>
+  body { font-family: system-ui, sans-serif; background: #111; color: #eee; padding: 20px; max-width: 900px; margin: auto; }
+  h1 { color: #ffd23f; }
+  h2 { color: #ffd23f; border-bottom: 2px solid #333; padding-bottom: 4px; margin-top: 32px; }
+  p.hint { color: #999; }
+  .grid { display: flex; flex-wrap: wrap; gap: 8px; }
+  button.snd {
+    font-size: 18px; font-weight: bold; padding: 10px 14px;
+    border: 2px solid #555; border-radius: 8px; background: #222; color: #fff;
+    cursor: pointer; min-width: 90px;
+  }
+  button.snd:hover { border-color: #ffd23f; }
+  button.snd small { display: block; font-weight: normal; color: #aaa; font-size: 12px; margin-top: 3px; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 10px 0; }
+  input[type=text] { font-size: 18px; padding: 8px; width: 260px; }
+  select, input[type=range] { font-size: 15px; }
+  #log { background: #000; color: #6f6; font-family: monospace; padding: 10px; height: 90px; overflow-y: auto; border-radius: 6px; }
+  .action { background: #ff2e88; border-color: #ff2e88; }
+</style>
+</head>
+<body>
+
+<h1>Phonics Tester</h1>
+<p class="hint">
+  Loads the same PHONICS_LETTERS / PHONICS_DIGRAPHS table as the real game (from game.js).
+  Click any button to hear exactly what the game would say. Use the free-text box at the
+  bottom to try alternate spellings for anything that sounds wrong — once you find one that
+  works, tell Claude the letter + the winning spelling and it'll get baked into game.js.
+</p>
+
+<div class="row">
+  <label>Voice: <select id="voice"></select></label>
+  <label>Rate: <input type="range" id="rate" min="0.4" max="1.2" step="0.05" value="0.8">
+    <span id="rate-val">0.8</span></label>
+</div>
+
+<h2>Letters (current game spelling)</h2>
+<div class="grid" id="letters"></div>
+
+<h2>Digraphs (current game spelling)</h2>
+<div class="grid" id="digraphs"></div>
+
+<h2>Try your own spelling</h2>
+<div class="row">
+  <input type="text" id="custom" placeholder="e.g. ssuh, ehs, shh">
+  <button class="snd action" id="custom-go">SPEAK IT</button>
+</div>
+
+<h2>Log</h2>
+<div id="log"></div>
+
+<script src="game.js"></script>
+<script>
+(function () {
+  var voices = [];
+  var voiceSel = document.getElementById('voice');
+  var rateInput = document.getElementById('rate');
+  var rateVal = document.getElementById('rate-val');
+  var log = document.getElementById('log');
+
+  function logLine(s) {
+    log.textContent += s + '\n';
+    log.scrollTop = log.scrollHeight;
+  }
+
+  function loadVoices() {
+    voices = window.speechSynthesis.getVoices().filter(function (v) { return v.lang.indexOf('en') === 0; });
+    if (!voices.length) voices = window.speechSynthesis.getVoices();
+    voiceSel.innerHTML = '';
+    voices.forEach(function (v, i) {
+      var o = document.createElement('option');
+      o.value = i;
+      o.textContent = v.name + ' (' + v.lang + ')';
+      voiceSel.appendChild(o);
+    });
+  }
+  window.speechSynthesis.onvoiceschanged = loadVoices;
+  loadVoices();
+
+  rateInput.oninput = function () { rateVal.textContent = rateInput.value; };
+
+  function speak(text) {
+    window.speechSynthesis.cancel();
+    var u = new SpeechSynthesisUtterance(text);
+    u.rate = parseFloat(rateInput.value);
+    var v = voices[voiceSel.value];
+    if (v) u.voice = v;
+    window.speechSynthesis.speak(u);
+    logLine('spoke: "' + text + '"' + (v ? '  [' + v.name + ']' : ''));
+  }
+
+  function makeButton(label, spoken, parent) {
+    var b = document.createElement('button');
+    b.className = 'snd';
+    b.innerHTML = label + '<small>' + spoken + '</small>';
+    b.onclick = function () { speak(spoken); };
+    parent.appendChild(b);
+  }
+
+  // PHONICS_LETTERS / PHONICS_DIGRAPHS / phonicsRespell come from game.js —
+  // top-level vars in a classic <script> become window globals.
+  var lettersBox = document.getElementById('letters');
+  'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').forEach(function (ch) {
+    makeButton(ch, phonicsRespell(ch), lettersBox);
+  });
+
+  var digraphBox = document.getElementById('digraphs');
+  Object.keys(PHONICS_DIGRAPHS).forEach(function (dg) {
+    makeButton(dg, PHONICS_DIGRAPHS[dg], digraphBox);
+  });
+
+  document.getElementById('custom-go').onclick = function () {
+    var t = document.getElementById('custom').value;
+    if (t) speak(t);
+  };
+  document.getElementById('custom').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') document.getElementById('custom-go').click();
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SOUND IT OUT</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<canvas id="confetti"></canvas>
+
+<header>
+  <h1 id="game-title">SOUND IT OUT</h1>
+  <div id="turn">PLAYER 1'S TURN</div>
+  <a href="tracker.html" style="position:absolute; top:12px; right:16px; font-size:0.8em; opacity:0.6;">📊 Progress</a>
+</header>
+
+<main>
+
+  <!-- IDLE -->
+  <section id="screen-idle" class="screen">
+    <p class="big-prompt">Press the button and say a word!</p>
+    <button id="mic-btn" class="mic">🎤</button>
+    <p class="hint">Say one word — like <b>pillow</b></p>
+  </section>
+
+  <!-- LISTENING -->
+  <section id="screen-listen" class="screen hidden">
+    <p class="big-prompt" id="listen-prompt">LISTENING…</p>
+    <div class="mic listening">🎤</div>
+    <p class="hint" id="listen-hint">Say your word out loud!</p>
+  </section>
+
+  <!-- CONFIRM -->
+  <section id="screen-confirm" class="screen hidden">
+    <p class="big-prompt">Is this your word?</p>
+    <button id="best-guess" class="guess-big"></button>
+    <div id="candidates"></div>
+    <div class="manual">
+      <label for="manual-input">Or Dad types it:</label>
+      <input id="manual-input" type="text" autocomplete="off" spellcheck="false" maxlength="12">
+      <button id="manual-go">GO</button>
+    </div>
+    <button id="retry-btn" class="ghost">🎤 Try saying it again</button>
+  </section>
+
+  <!-- SENTENCE -->
+  <section id="screen-sentence" class="screen hidden">
+    <p class="big-prompt">USE IT IN A SENTENCE!</p>
+    <button id="sentence-mic-btn" class="mic">🎤</button>
+    <p class="hint">Say your word in a sentence — it helps!</p>
+    <div id="sentence-result" style="display:none; margin:20px 0;">
+      <p id="sentence-heard" style="font-size:1.2em; font-weight:bold; margin:10px 0;"></p>
+      <button id="sentence-continue-btn" class="action">✓ OK, BUILD!</button>
+      <button id="sentence-retry-btn" class="ghost">🎤 Try again</button>
+    </div>
+    <div id="sentence-manual" class="manual" style="display:none;">
+      <label for="sentence-input">Or Dad types it:</label>
+      <input id="sentence-input" type="text" autocomplete="off" spellcheck="false">
+      <button id="sentence-go">GO</button>
+    </div>
+    <button id="sentence-show-manual" class="ghost" style="display:none;">Type instead</button>
+  </section>
+
+  <!-- BUILD -->
+  <section id="screen-build" class="screen hidden">
+    <div id="slots" class="slots"></div>
+    <div id="tiles" class="tiles"></div>
+    <div class="controls">
+      <button id="sound-btn" class="action">🔊 SOUND IT OUT</button>
+      <button id="clear-btn" class="ghost">↺ CLEAR</button>
+    </div>
+    <p class="hint">Click a letter to put it in. Click it again to take it back.</p>
+  </section>
+
+  <!-- WIN -->
+  <section id="screen-win" class="screen hidden">
+    <p class="big-prompt win-shout">YOU DID IT!</p>
+    <div id="win-word" class="win-word"></div>
+    <p class="hint">Now write it on your whiteboard — exactly like that!</p>
+    <button id="again-btn" class="action">🎤 NEXT WORD</button>
+  </section>
+
+</main>
+
+<footer id="status"></footer>
+
+<script src="/names.js"></script>
+<script src="game.js"></script>
+</body>
+</html>

@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Dino Roar</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<canvas id="gc" width="900" height="640"></canvas>
+<div id="panel">
+  <!-- Player 1 (left) -->
+  <div class="pinfo" id="p1">
+    <div class="pname" id="p1name">PLAYER 1</div>
+    <div class="pscore" id="p1score">★ 0</div>
+    <div class="prole" id="p1role">DRIVER</div>
+  </div>
+  <!-- Center controls -->
+  <div id="ctls">
+    <div id="level">SECTOR 1</div>
+    <button class="cb" id="brestart">RESTART ↻</button>
+    <div id="hint">DRIVE: steer down the dirt road (up = go, down = reverse) &nbsp;•&nbsp; DEFEND: aim + blast (Player 1 Space / Player 2 Enter), grenade (Player 1 E / Player 2 R-Shift), scope (Player 1 Q / Player 2 /)</div>
+  </div>
+  <!-- Player 2 (right) -->
+  <div class="pinfo" id="p2">
+    <div class="pname" id="p2name">PLAYER 2</div>
+    <div class="pscore" id="p2score">★ 0</div>
+    <div class="prole" id="p2role">DRIVER</div>
+  </div>
+</div>
+<script src="/names.js"></script>
+<script src="game.js"></script>
+</body>
+</html>

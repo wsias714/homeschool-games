@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Railway Rush</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<canvas id="gc" width="900" height="520"></canvas>
+<div id="panel">
+  <div id="tlabel">Tap a train!</div>
+  <div id="ctls">
+    <div id="btns">
+      <button class="cb" id="bf" disabled>FASTER▲</button>
+      <button class="cb" id="bs" disabled>SLOWER▼</button>
+      <button class="cb" id="bx">STOP ALL⚠</button>
+      <button class="cb" id="bg">🚧 GATE</button>
+    </div>
+    <div id="spi"></div>
+  </div>
+  <div id="rp">
+    <div id="sc">★ 0</div>
+    <div id="sd"></div>
+  </div>
+</div>
+<script src="game.js"></script>
+</body>
+</html>

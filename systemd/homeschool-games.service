@@ -1,0 +1,13 @@
+[Unit]
+Description=Homeschool games server (games, progress log, speech endpoints) on localhost:8420
+PartOf=graphical-session.target
+After=graphical-session-pre.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 %h/Projects/homeschool-games/server/server.py
+Restart=always
+RestartSec=5s
+
+[Install]
+WantedBy=graphical-session.target

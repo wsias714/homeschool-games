@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cannon Battle</title>
+<link rel="preload" href="fonts/fredoka.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ========== THE VOYAGE MAP ========== -->
+  <section id="map-screen" class="screen" aria-label="Voyage map">
+    <div id="chart-wrap">
+      <svg id="chart" role="group" aria-label="Map of the Caribbean with five ports"></svg>
+    </div>
+
+    <aside id="port-panel">
+      <h1 class="game-title">Cannon Battle</h1>
+      <p class="lede">Defend the forts of the Caribbean, one port at a time. Tap a port on the map to learn about it.</p>
+
+      <div id="port-info" aria-live="polite">
+        <div class="port-head">
+          <span id="pi-num" class="port-num">1</span>
+          <div>
+            <h2 id="pi-city">Nassau</h2>
+            <p id="pi-country">The Bahamas</p>
+          </div>
+        </div>
+        <p id="pi-fact"></p>
+        <div id="pi-fleet"></div>
+        <button id="set-sail-btn" class="btn btn-fire">Set sail</button>
+        <p id="pi-lock" class="hidden"></p>
+      </div>
+
+      <ol id="voyage" aria-label="Your voyage"></ol>
+    </aside>
+  </section>
+
+  <!-- ========== THE BATTLE ========== -->
+  <section id="game-screen" class="screen hidden" aria-label="Battle">
+    <div id="board-col">
+      <header id="board-head">
+        <div class="where">
+          <span id="level-city">Nassau</span>
+          <span id="level-country">The Bahamas</span>
+        </div>
+        <div class="walls" aria-label="Fort walls">
+          <span class="walls-label">Fort</span>
+          <div id="wall-segments"></div>
+        </div>
+        <div id="chest" aria-label="Treasure chest">
+          <svg viewBox="0 0 40 32" aria-hidden="true" class="chest-icon">
+            <path d="M3 13h34v16a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" fill="#8a5424" stroke="#3b2311" stroke-width="2"/>
+            <path d="M3 13c0-6 5-10 17-10s17 4 17 10z" fill="#a8672e" stroke="#3b2311" stroke-width="2"/>
+            <path d="M3 13h34" stroke="#f0b441" stroke-width="3"/>
+            <rect x="16" y="11" width="8" height="9" rx="1.5" fill="#f0b441" stroke="#3b2311" stroke-width="1.5"/>
+            <path d="M8 4v27M32 4v27" stroke="#f0b441" stroke-width="2.5" opacity=".9"/>
+          </svg>
+          <span id="coin-count">0</span>
+        </div>
+        <button id="sound-btn" class="icon-btn" aria-pressed="true" aria-label="Sound on">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path class="waves" d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/><path class="cross" d="M16.5 9.5l5 5M21.5 9.5l-5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+        <button id="change-port-btn" class="btn btn-quiet">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M9 4v14M15 6v14" stroke="currentColor" stroke-width="2"/></svg>
+          Map
+        </button>
+      </header>
+
+      <div id="harbor-wrap">
+        <canvas id="harbor" role="img" aria-label="The harbour"></canvas>
+        <div id="board-overlay" class="hidden" role="dialog" aria-modal="false" aria-labelledby="overlay-title">
+          <div class="overlay-card">
+            <h2 id="overlay-title"></h2>
+            <p id="overlay-text"></p>
+            <div id="overlay-coins" aria-hidden="true"></div>
+            <div id="overlay-buttons"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <aside id="sidebar">
+      <div id="turn-banner">
+        <span id="turn-badge" class="badge">W</span>
+        <span class="turn-text"><strong id="turn-name">Player 1</strong>’s turn</span>
+      </div>
+
+      <div id="cannon-panel">
+        <h3>Cannon</h3>
+        <div id="cannon-select"></div>
+      </div>
+
+      <div id="dials">
+        <div class="dial" id="col-dial">
+          <h3>Column</h3>
+          <div class="dial-row">
+            <button class="dial-btn" data-dial="col" data-dir="-1" aria-label="Column down">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5 8 12l7 7" /></svg>
+            </button>
+            <output id="col-value" class="dial-value" aria-live="polite">1</output>
+            <button class="dial-btn" data-dial="col" data-dir="1" aria-label="Column up">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7" /></svg>
+            </button>
+          </div>
+          <p class="dial-sub">powder scoops</p>
+        </div>
+
+        <div class="dial" id="row-dial">
+          <h3>Row</h3>
+          <div class="dial-row">
+            <button class="dial-btn" data-dial="row" data-dir="-1" aria-label="Row down">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 9 7 7 7-7" /></svg>
+            </button>
+            <output id="row-value" class="dial-value" aria-live="polite">1</output>
+            <button class="dial-btn" data-dial="row" data-dir="1" aria-label="Row up">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 15 7-7 7 7" /></svg>
+            </button>
+          </div>
+          <p class="dial-sub">barrel notches</p>
+        </div>
+
+        <div class="dial wide hidden" id="fuse-dial">
+          <div class="fuse-top">
+            <h3>Fuse</h3>
+            <p class="dial-sub">squares to lead a moving ship</p>
+          </div>
+          <div class="dial-row">
+            <button class="dial-btn" data-dial="fuse" data-dir="-1" aria-label="Shorter fuse">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12" /></svg>
+            </button>
+            <output id="fuse-value" class="dial-value" aria-live="polite">0</output>
+            <button class="dial-btn" data-dial="fuse" data-dir="1" aria-label="Longer fuse">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12M12 6v12" /></svg>
+            </button>
+          </div>
+          <div class="beat-wrap">
+            <div id="beat" aria-hidden="true"></div>
+            <p id="beat-label" class="dial-sub"></p>
+          </div>
+        </div>
+      </div>
+
+      <div id="math">
+        <div id="range-equation" aria-live="polite">1 × 1 = 1</div>
+        <div id="combo-grid" aria-hidden="true"></div>
+      </div>
+
+      <button id="fire-btn" class="btn btn-fire">
+        <span class="fire-fill" aria-hidden="true"></span>
+        <span class="fire-label">Fire!</span>
+      </button>
+      <p id="feedback" role="status" aria-live="polite"></p>
+
+      <ul id="fleet-status" aria-label="Enemy ships"></ul>
+
+      <p class="keys-hint">Keyboard: arrow keys aim, space fires</p>
+    </aside>
+
+    <div id="confetti" aria-hidden="true"></div>
+    <div id="coin-layer" aria-hidden="true"></div>
+  </section>
+
+</div>
+
+<script src="chart.js"></script>
+<script src="/names.js"></script>
+<script src="game.js"></script>
+</body>
+</html>

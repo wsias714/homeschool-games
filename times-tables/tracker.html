@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Times Table Trail — Progress</title>
+<style>
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #1a1a2e;
+    color: #eee;
+    margin: 0;
+    padding: 24px;
+  }
+  h1 { margin: 0 0 4px; font-size: 1.6em; }
+  h2 { font-size: 1.15em; color: #ffd23f; margin: 28px 0 10px; }
+  .summary { color: #aaa; margin-bottom: 8px; }
+  a.back { color: #7cc9ff; text-decoration: none; font-size: 0.9em; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #23233f;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid #33335a; }
+  th {
+    background: #2d2d55;
+    font-size: 0.85em;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #aab;
+  }
+  tr.session-start td { border-top: 2px solid #ffd23f; }
+  .p1 { color: #7cc9ff; }
+  .p2 { color: #ff9f7c; }
+  .ok { color: #36e07a; }
+  .bad { color: #ff6b6b; }
+  .empty { text-align: center; color: #888; padding: 40px; }
+
+  #heatmap {
+    display: grid;
+    grid-template-columns: repeat(11, minmax(28px, 1fr));
+    gap: 3px;
+    background: #23233f;
+    padding: 10px;
+    border-radius: 8px;
+    max-width: 520px;
+  }
+  .hcell {
+    aspect-ratio: 1 / 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    font-size: 0.7em;
+    font-weight: bold;
+    background: #2d2d55;
+    color: #cfd;
+  }
+  .hcell.label { background: transparent; color: #aab; }
+  .hcell.mastered { background: #ffd23f; color: #1a1a2e; }
+</style>
+</head>
+<body>
+
+<a class="back" href="index.html">&larr; Back to game</a>
+<h1>Times Table Trail — Progress</h1>
+<p class="summary" id="summary">Loading…</p>
+
+<h2>Lifetime mastery grid</h2>
+<div id="heatmap"></div>
+
+<h2>Session log</h2>
+<table id="table" style="display:none">
+  <thead>
+    <tr>
+      <th>Date</th>
+      <th>Player</th>
+      <th>Fact</th>
+      <th>Answer</th>
+      <th>Result</th>
+      <th>Tier</th>
+    </tr>
+  </thead>
+  <tbody id="tbody"></tbody>
+</table>
+
+<p class="empty" id="empty" style="display:none">No answers logged yet — go play!</p>
+
+<script src="/names.js"></script>
+<script>
+var PN = Object.assign({ P1: 'Player 1', P2: 'Player 2', P3: 'Player 3' }, window.PLAYER_NAMES || {});
+var MASTERY_TARGET = 3;
+var FULL_MAX_FACTOR = 10;
+
+fetch('/api/sessions?game=times-tables')
+  .then(function (r) { return r.json(); })
+  .then(function (records) {
+    records.sort(function (a, b) {
+      return new Date(b.server_timestamp || 0) - new Date(a.server_timestamp || 0);
+    });
+
+    if (!records.length) {
+      document.getElementById('empty').style.display = '';
+      document.getElementById('summary').textContent = '';
+      renderHeatmap({});
+      return;
+    }
+
+    var sessionIds = {};
+    records.forEach(function (r) { sessionIds[r.session_id] = true; });
+    var sessionCount = Object.keys(sessionIds).length;
+    var correctCount = records.filter(function (r) { return r.correct; }).length;
+
+    document.getElementById('summary').textContent =
+      records.length + ' answer' + (records.length === 1 ? '' : 's') + ' (' + correctCount + ' correct) across ' +
+      sessionCount + ' session' + (sessionCount === 1 ? '' : 's');
+
+    // Rebuild per-fact correct counts (oldest first) for the heatmap.
+    var chronological = records.slice().sort(function (a, b) {
+      return new Date(a.server_timestamp || 0) - new Date(b.server_timestamp || 0);
+    });
+    var gridState = {};
+    chronological.forEach(function (r) {
+      var key = r.a + ',' + r.b;
+      var cell = gridState[key] || { correct: 0, wrong: 0 };
+      if (r.correct) cell.correct++; else cell.wrong++;
+      gridState[key] = cell;
+    });
+    renderHeatmap(gridState);
+
+    var tbody = document.getElementById('tbody');
+    var lastSession = null;
+
+    records.forEach(function (r) {
+      var tr = document.createElement('tr');
+      if (r.session_id !== lastSession) {
+        tr.className = 'session-start';
+        lastSession = r.session_id;
+      }
+
+      var date = r.server_timestamp ? new Date(r.server_timestamp) : null;
+      var dateStr = date ? date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) +
+        ' ' + date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : '—';
+
+      var playerClass = (r.player || '').toLowerCase();
+
+      tr.innerHTML =
+        '<td>' + dateStr + '</td>' +
+        '<td class="' + playerClass + '">' + (PN[r.player] || r.player || '—') + '</td>' +
+        '<td>' + r.a + ' × ' + r.b + '</td>' +
+        '<td>' + (r.a * r.b) + '</td>' +
+        '<td class="' + (r.correct ? 'ok' : 'bad') + '">' + (r.correct ? '✓ correct' : '✗ wrong') + '</td>' +
+        '<td>×' + (r.tier != null ? r.tier : '—') + '</td>';
+
+      tbody.appendChild(tr);
+    });
+
+    document.getElementById('table').style.display = '';
+  })
+  .catch(function () {
+    document.getElementById('summary').textContent = 'Could not load progress — is the game server running?';
+    renderHeatmap({});
+  });
+
+function renderHeatmap(gridState) {
+  var el = document.getElementById('heatmap');
+  el.innerHTML = '';
+
+  var corner = document.createElement('div');
+  corner.className = 'hcell label';
+  el.appendChild(corner);
+
+  for (var b = 1; b <= FULL_MAX_FACTOR; b++) {
+    var colLabel = document.createElement('div');
+    colLabel.className = 'hcell label';
+    colLabel.textContent = b;
+    el.appendChild(colLabel);
+  }
+
+  for (var a = 1; a <= FULL_MAX_FACTOR; a++) {
+    var rowLabel = document.createElement('div');
+    rowLabel.className = 'hcell label';
+    rowLabel.textContent = a;
+    el.appendChild(rowLabel);
+
+    for (var b2 = 1; b2 <= FULL_MAX_FACTOR; b2++) {
+      var cell = gridState[a + ',' + b2];
+      var correct = cell ? cell.correct : 0;
+      var div = document.createElement('div');
+      div.className = 'hcell';
+      div.title = a + ' × ' + b2 + ' — ' + correct + ' correct' + (cell ? ', ' + cell.wrong + ' wrong' : '');
+      if (correct >= MASTERY_TARGET) {
+        div.className += ' mastered';
+        div.textContent = '★';
+      } else {
+        div.style.opacity = correct > 0 ? (0.35 + 0.65 * (correct / MASTERY_TARGET)) : 0.35;
+        div.textContent = correct > 0 ? correct : '';
+      }
+      el.appendChild(div);
+    }
+  }
+}
+</script>
+
+</body>
+</html>

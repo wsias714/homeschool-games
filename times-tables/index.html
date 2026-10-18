@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Times Table Trail</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="app">
+  <div id="board-col">
+    <header>
+      <button id="pause-btn" title="Pause">⏸ Pause</button>
+      <h1>🚀 Times Table Trail</h1>
+      <div id="tier-banner">Exploring up to ×<span id="tier-num">2</span></div>
+    </header>
+    <div id="board-wrap">
+      <div id="grid"></div>
+    </div>
+  </div>
+
+  <div id="sidebar">
+    <div id="turn-banner">
+      <span id="turn-name">PLAYER 1</span>'S TURN
+    </div>
+
+    <div id="question-panel">
+      <div id="tier-nav">
+        <button id="tier-prev" class="nav-btn" title="Practice an easier tier">◀ Easier</button>
+        <button id="tier-next" class="nav-btn" title="Practice a harder tier">Harder ▶</button>
+      </div>
+      <div id="fact-display"><span id="fact-text"></span><span id="answer-display"></span><span id="cursor">_</span></div>
+      <div id="feedback"></div>
+      <div id="keypad">
+        <button class="key" data-key="1">1</button>
+        <button class="key" data-key="2">2</button>
+        <button class="key" data-key="3">3</button>
+        <button class="key" data-key="4">4</button>
+        <button class="key" data-key="5">5</button>
+        <button class="key" data-key="6">6</button>
+        <button class="key" data-key="7">7</button>
+        <button class="key" data-key="8">8</button>
+        <button class="key" data-key="9">9</button>
+        <button class="key wide back" data-key="back">⌫ DELETE</button>
+        <button class="key" data-key="0">0</button>
+        <button class="key wide go" data-key="go">✓ ENTER</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="win-screen" class="hidden">
+    <h2>🏆 YOU MASTERED THE WHOLE MAP! 🏆</h2>
+    <p id="win-stats"></p>
+  </div>
+
+  <div id="pause-screen" class="hidden">
+    <h2>⏸ Taking a break!</h2>
+    <p id="pause-stats"></p>
+    <div id="pause-actions">
+      <button id="resume-btn" class="key go">▶ Resume</button>
+      <button id="close-tab-btn" class="key back">✕ Close Tab</button>
+    </div>
+    <p id="pause-hint">Your progress is saved — you can close this tab now, or hit Resume to keep going.</p>
+  </div>
+
+  <div id="confetti"></div>
+</div>
+
+<script src="/names.js"></script>
+<script src="game.js"></script>
+</body>
+</html>

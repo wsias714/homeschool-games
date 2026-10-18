@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sound It Out — Progress</title>
+<style>
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #1a1a2e;
+    color: #eee;
+    margin: 0;
+    padding: 24px;
+  }
+  h1 {
+    margin: 0 0 4px;
+    font-size: 1.6em;
+  }
+  .summary {
+    color: #aaa;
+    margin-bottom: 24px;
+  }
+  a.back {
+    color: #7cc9ff;
+    text-decoration: none;
+    font-size: 0.9em;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #23233f;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  th, td {
+    text-align: left;
+    padding: 10px 14px;
+    border-bottom: 1px solid #33335a;
+  }
+  th {
+    background: #2d2d55;
+    font-size: 0.85em;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #aab;
+  }
+  tr.session-start td {
+    border-top: 2px solid #ffd23f;
+  }
+  .word {
+    font-weight: bold;
+    font-size: 1.1em;
+    letter-spacing: 0.03em;
+  }
+  .p1 { color: #7cc9ff; }
+  .p2 { color: #ff9f7c; }
+  .sentence {
+    color: #ccc;
+    font-style: italic;
+  }
+  .source-manual {
+    font-size: 0.75em;
+    color: #888;
+  }
+  .empty {
+    text-align: center;
+    color: #888;
+    padding: 40px;
+  }
+</style>
+</head>
+<body>
+
+<a class="back" href="index.html">&larr; Back to game</a>
+<h1>Sound It Out — Progress</h1>
+<p class="summary" id="summary">Loading…</p>
+
+<table id="table" style="display:none">
+  <thead>
+    <tr>
+      <th>Date</th>
+      <th>Player</th>
+      <th>Word</th>
+      <th>Sentence</th>
+    </tr>
+  </thead>
+  <tbody id="tbody"></tbody>
+</table>
+
+<p class="empty" id="empty" style="display:none">No words completed yet — go play!</p>
+
+<script src="/names.js"></script>
+<script>
+var PN = Object.assign({ P1: 'Player 1', P2: 'Player 2', P3: 'Player 3' }, window.PLAYER_NAMES || {});
+fetch('/api/sessions')
+  .then(function (r) { return r.json(); })
+  .then(function (records) {
+    records.sort(function (a, b) {
+      return new Date(b.server_timestamp || 0) - new Date(a.server_timestamp || 0);
+    });
+
+    if (!records.length) {
+      document.getElementById('empty').style.display = '';
+      document.getElementById('summary').textContent = '';
+      return;
+    }
+
+    var sessionIds = {};
+    records.forEach(function (r) { sessionIds[r.session_id] = true; });
+    var sessionCount = Object.keys(sessionIds).length;
+
+    document.getElementById('summary').textContent =
+      records.length + ' word' + (records.length === 1 ? '' : 's') + ' completed across ' +
+      sessionCount + ' session' + (sessionCount === 1 ? '' : 's');
+
+    var tbody = document.getElementById('tbody');
+    var lastSession = null;
+
+    records.forEach(function (r) {
+      var tr = document.createElement('tr');
+      if (r.session_id !== lastSession) {
+        tr.className = 'session-start';
+        lastSession = r.session_id;
+      }
+
+      var date = r.server_timestamp ? new Date(r.server_timestamp) : null;
+      var dateStr = date ? date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) +
+        ' ' + date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : '—';
+
+      var playerClass = (r.player || '').toLowerCase();
+
+      tr.innerHTML =
+        '<td>' + dateStr + '</td>' +
+        '<td class="' + playerClass + '">' + (PN[r.player] || r.player || '—') + '</td>' +
+        '<td class="word">' + (r.word || '—') + '</td>' +
+        '<td class="sentence">' + (r.sentence ? escapeHtml(r.sentence) : '—') +
+          (r.sentence_source === 'manual' ? ' <span class="source-manual">(typed)</span>' : '') +
+        '</td>';
+
+      tbody.appendChild(tr);
+    });
+
+    document.getElementById('table').style.display = '';
+  })
+  .catch(function () {
+    document.getElementById('summary').textContent = 'Could not load progress — is the game server running?';
+  });
+
+function escapeHtml(s) {
+  var div = document.createElement('div');
+  div.textContent = s;
+  return div.innerHTML;
+}
+</script>
+
+</body>
+</html>

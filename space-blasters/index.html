@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Space Blasters</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<canvas id="gc" width="900" height="640"></canvas>
+<div id="panel">
+  <!-- Player 1 (left) -->
+  <div class="pinfo" id="p1">
+    <div class="pname" id="p1name">PLAYER 1</div>
+    <div class="pscore" id="p1score">★ 0</div>
+    <div class="shields" id="p1shields"></div>
+    <div class="pweap" id="p1weap">BLASTER</div>
+  </div>
+  <!-- Center controls -->
+  <div id="ctls">
+    <div id="level">SECTOR 1</div>
+    <button class="cb" id="brestart">RESTART ↻</button>
+    <div id="hint">Player 1: WASD + Space &nbsp;•&nbsp; Player 2: Arrows + Enter &nbsp;•&nbsp; at each Moon Base: ←→ gun, ↑↓ ship, then pick a sector</div>
+  </div>
+  <!-- Player 2 (right) -->
+  <div class="pinfo" id="p2">
+    <div class="pname" id="p2name">PLAYER 2</div>
+    <div class="pscore" id="p2score">★ 0</div>
+    <div class="shields" id="p2shields"></div>
+    <div class="pweap" id="p2weap">LASER</div>
+  </div>
+</div>
+<script src="/names.js"></script>
+<script src="game.js"></script>
+</body>
+</html>

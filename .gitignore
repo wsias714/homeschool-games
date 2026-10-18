@@ -1,0 +1,12 @@
+node_modules/
+__pycache__/
+*.pyc
+.claude/
+.idea/
+# Private: real progress logs and player names live in ~/Dropbox/Apps/HomeschoolGames/, never here.
+data/
+names.json
+*.jsonl
+server/models/
+server/server.log
+.env

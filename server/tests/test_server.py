@@ -3,6 +3,7 @@ from pathlib import Path
 
 tmp = tempfile.mkdtemp()
 os.environ['GAMES_APP_DIR'] = tmp
+os.environ['GAMES_SPOOL_DIR'] = str(Path(tmp, 'spool'))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import server  # noqa: E402
 from http.server import HTTPServer  # noqa: E402
@@ -38,6 +39,24 @@ class ServerTest(unittest.TestCase):
         rows = json.loads(self.get('/api/sessions?game=times-tables'))
         self.assertEqual(rows[0]['player'], 'P1')
         self.assertTrue(Path(tmp, 'data', 'times-tables-log.jsonl').exists())
+
+
+    def test_track_spools_while_dropbox_down_then_flushes(self):
+        def post(rec):
+            req = urllib.request.Request(self.base + '/api/track', data=json.dumps(rec).encode(),
+                                         headers={'Content-Type': 'application/json'})
+            return json.loads(urllib.request.urlopen(req).read())
+        log = Path(tmp, 'data', 'dino-roar-log.jsonl')
+        real = server.data_dir_writable
+        server.data_dir_writable = lambda: False   # as if ~/Dropbox were unmounted
+        try:
+            self.assertEqual(post({'game': 'dino-roar', 'n': 1})['status'], 'spooled')
+        finally:
+            server.data_dir_writable = real
+        self.assertFalse(log.exists())
+        self.assertEqual(post({'game': 'dino-roar', 'n': 2})['status'], 'logged')
+        self.assertEqual([json.loads(l)['n'] for l in log.read_text().splitlines()], [1, 2])
+        self.assertFalse(Path(tmp, 'spool', 'dino-roar-log.jsonl').exists())
 
 
 if __name__ == '__main__':

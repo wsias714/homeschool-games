@@ -23,14 +23,54 @@ DATA_DIR = Path(os.environ.get('GAMES_DATA_DIR', APP_DIR / 'data'))
 NAMES_FILE = APP_DIR / 'names.json'
 PORT = 8420
 
+# Records that arrive while ~/Dropbox isn't mounted wait here and are flushed on the next good write.
+SPOOL_DIR = Path(os.environ.get('GAMES_SPOOL_DIR', Path.home() / '.local' / 'state' / 'homeschool-games' / 'spool'))
+
 KNOWN_GAMES = {'space-blasters', 'dino-roar', 'train-racer', 'sound-it-out', 'times-tables', 'cannon-battle'}
 
-DATA_DIR.mkdir(parents=True, exist_ok=True)
+# Never write into the bare ~/Dropbox folder while the rclone mount is down: the write never
+# reaches Dropbox and the non-empty folder stops rclone mounting at all (2026-10-21, when the
+# old import-time mkdir here did exactly that at boot). See ~/Projects/_shared/mount_guard.py.
+sys.path.insert(0, str(Path.home() / 'Projects' / '_shared'))
+try:
+    import mount_guard
+except ImportError:  # another machine without the workspace: no rclone mounts to protect
+    mount_guard = None
 
-def log_file_for(game):
+
+def data_dir_writable():
+    """True (and DATA_DIR exists) when progress logs can go to DATA_DIR now."""
+    if mount_guard and not mount_guard.ok(DATA_DIR):
+        return False
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    return True
+
+
+def log_file_for(game, base=None):
     if game not in KNOWN_GAMES:
         game = 'sound-it-out'
-    return DATA_DIR / f'{game}-log.jsonl'
+    return (base or DATA_DIR) / f'{game}-log.jsonl'
+
+
+def flush_spool():
+    """Append spooled records to their Dropbox logs, oldest first, then drop the spool file."""
+    for f in sorted(SPOOL_DIR.glob('*-log.jsonl')) if SPOOL_DIR.is_dir() else []:
+        with open(DATA_DIR / f.name, 'a') as out:
+            out.write(f.read_text())
+        f.unlink()
+
+
+def append_record(game, line):
+    """Write one record; returns 'logged', or 'spooled' if Dropbox is down."""
+    if data_dir_writable():
+        flush_spool()
+        with open(log_file_for(game), 'a') as f:
+            f.write(line + '\n')
+        return 'logged'
+    SPOOL_DIR.mkdir(parents=True, exist_ok=True)
+    with open(log_file_for(game, SPOOL_DIR), 'a') as f:
+        f.write(line + '\n')
+    return 'spooled'
 
 def _json_safe(value):
     try:
@@ -136,10 +176,9 @@ class GameHandler(SimpleHTTPRequestHandler):
             # removed. Reject it here instead of ever writing it.
             line = json.dumps(record, allow_nan=False)
 
-            with open(log_file_for(game), 'a') as f:
-                f.write(line + '\n')
+            status = append_record(game, line)
 
-            response = json.dumps({'ok': True}).encode()
+            response = json.dumps({'ok': True, 'status': status}).encode()
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self.send_header('Content-Length', len(response))

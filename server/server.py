@@ -5,6 +5,7 @@ Serves static game files and speech API endpoints.
 """
 
 import os
+import re
 import sys
 import json
 import subprocess
@@ -115,6 +116,9 @@ class GameHandler(SimpleHTTPRequestHandler):
         elif path.startswith('/cannon-battle/') or path == '/cannon-battle':
             self.path = path.replace('/cannon-battle', '', 1) or '/index.html'
             self.directory = str(GAME_ROOT / 'cannon-battle')
+        elif path.startswith('/shared/'):
+            self.path = path.replace('/shared', '', 1)
+            self.directory = str(GAME_ROOT / 'shared')
         else:
             self.send_error(404)
             return
@@ -145,6 +149,8 @@ class GameHandler(SimpleHTTPRequestHandler):
             self.handle_tts(body)
         elif path == '/api/track':
             self.handle_track(body)
+        elif path == '/api/feedback':
+            self.handle_feedback(body)
         else:
             self.send_error(404)
 
@@ -192,6 +198,42 @@ class GameHandler(SimpleHTTPRequestHandler):
         except Exception as e:
             print(f'Track error: {e}', file=sys.stderr)
             self.send_error(500, str(e))
+
+    def handle_feedback(self, body):
+        """The in-app Feedback button: one JSON file per item in the private Dropbox folder (feedback/), which
+        ai-housekeeping's collector turns into a ledger entry and a build. 503 makes the widget keep it and retry."""
+        try:
+            item = json.loads(body.decode())
+            text, fid = item.get('text'), str(item.get('id', ''))
+            if not isinstance(text, str) or not text.strip() or len(text) > 4000 or not re.fullmatch(r'[a-f0-9]{16}', fid):
+                self.send_error(400, 'text and a 16-hex id are required')
+                return
+        except (ValueError, UnicodeDecodeError, AttributeError):
+            self.send_error(400, 'Invalid JSON')
+            return
+        dev = item.get('device') if isinstance(item.get('device'), dict) else {}
+        clean = {'id': fid, 'app': 'homeschool-games', 'text': text.strip(),
+                 'kind': item.get('kind') if item.get('kind') in ('bug', 'idea', 'other') else 'other',
+                 'ts': str(item.get('ts') or datetime.now(timezone.utc).isoformat())[:40],
+                 'version': str(item.get('version') or '')[:40],
+                 'device': {k: str(dev[k])[:80] for k in ('kind', 'ua', 'screen', 'standalone') if k in dev}}
+        folder = APP_DIR / 'feedback'
+        try:
+            if mount_guard and not mount_guard.ok(folder):
+                raise OSError('Dropbox is not mounted')
+            folder.mkdir(parents=True, exist_ok=True)
+            tmp = folder / f'.{fid}.tmp'
+            tmp.write_text(json.dumps(clean))
+            tmp.replace(folder / f'{fid}.json')
+        except OSError as e:
+            print(f'Feedback not stored: {e}', file=sys.stderr)
+            self.send_error(503, 'Could not store feedback right now')
+            return
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Length', '12')
+        self.end_headers()
+        self.wfile.write(b'{"ok": true}')
 
     def handle_names(self):
         """Player display names from the private names.json ({"P1": "...", "P2": "...", "P3": "..."}).

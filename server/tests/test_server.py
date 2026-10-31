@@ -32,6 +32,23 @@ class ServerTest(unittest.TestCase):
         self.assertIn('"P1": "Ann"', text)
         self.assertNotIn('"X"', text)
 
+    def test_feedback_is_filed_in_the_dropbox_folder(self):
+        def post(rec):
+            req = urllib.request.Request(self.base + '/api/feedback', data=json.dumps(rec).encode(),
+                                         headers={'Content-Type': 'application/json'})
+            return urllib.request.urlopen(req)
+        post({'id': 'a1b2c3d4e5f60708', 'app': 'other', 'kind': 'idea', 'text': 'more rockets', 'device': {'kind': 'desktop'}})
+        item = json.loads(Path(tmp, 'feedback', 'a1b2c3d4e5f60708.json').read_text())
+        self.assertEqual((item['app'], item['kind'], item['text']), ('homeschool-games', 'idea', 'more rockets'))
+        for bad in ({'id': 'nope', 'text': 'x'}, {'id': 'a1b2c3d4e5f60709', 'text': ''}):
+            with self.assertRaises(urllib.error.HTTPError) as cm:
+                post(bad)
+            self.assertEqual(cm.exception.code, 400)
+
+    def test_shared_feedback_widget_is_served(self):
+        self.assertIn('initFeedback', self.get('/shared/feedback.js'))
+
+
     def test_track_roundtrip(self):
         req = urllib.request.Request(self.base + '/api/track', data=json.dumps(
             {'game': 'times-tables', 'player': 'P1', 'correct': True}).encode(), method='POST')

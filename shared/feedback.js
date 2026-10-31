@@ -41,7 +41,7 @@ function el(tag, css, props) {
 
 export function initFeedback(opts) {
   const o = Object.assign({ version: "", hold: 0, bottom: 14, side: "right", email: "", label: "Feedback" }, opts);
-  if (!o.app || document.getElementById("app-feedback-root")) return { flush: () => Promise.resolve() };
+  if (!o.app || document.getElementById("app-feedback-root")) return { flush: () => Promise.resolve(), open: () => {} };
   const QKEY = "app-feedback-queue:" + o.app;
 
   const load = () => { try { return JSON.parse(localStorage.getItem(QKEY) || "[]"); } catch { return []; } };
@@ -101,6 +101,7 @@ export function initFeedback(opts) {
   row.append(send, close);
   panel.append(title, chips, box, msg, who, mail, row);
   root.append(panel, fab);
+  if (o.fab === false) { fab.style.display = "none"; panel.style.bottom = "0"; }   // opened from the app's own Settings instead
 
   const open = () => { panel.style.display = "block"; msg.textContent = ""; mail.style.display = "none"; who.style.display = "none"; paint(); box.focus(); };
   const hide = () => { panel.style.display = "none"; };
@@ -145,5 +146,5 @@ export function initFeedback(opts) {
   (document.body || document.documentElement).append(root);
   addEventListener("online", flush);
   flush();
-  return { flush };
+  return { flush, open };
 }

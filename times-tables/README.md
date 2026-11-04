@@ -33,7 +33,7 @@ at a time, toward a full 10×10 = 100-fact grid.
 
 ## Starting over
 
-The pause screen has "Start the map over: 1×1 / 2×2" (two taps: pick a level, then confirm). It writes a
+The pause screen has "Start the map over at:" with a chip for every level from 1×1 up to the level the map has reached (two taps: pick a level, then confirm). It writes a
 `{reset: true, level: N}` marker into the answer log instead of deleting anything: on load the replay clears the grid
 at the last marker and restarts from that level, so every past session stays in the tracker (the lifetime heatmap
 and answer list ignore the markers). If the server can't be reached, nothing changes.

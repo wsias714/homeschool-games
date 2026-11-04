@@ -386,3 +386,5 @@ header h1 {
 .reset-label { color: #aab; font-size: 0.95em; }
 #reset-pick .key, #reset-confirm .key { padding: 10px 20px; font-size: 1em; border-radius: 10px; min-height: unset; }
 #reset-msg { color: #ffd23f; font-size: 0.9em; margin: 8px 0 0; }
+#reset-levels { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+#reset-levels .key { padding: 8px 14px; min-width: 56px; }

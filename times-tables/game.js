@@ -255,6 +255,7 @@ if (typeof document !== 'undefined' && document.getElementById && document.getEl
       resetPick: document.getElementById('reset-pick'),
       resetConfirm: document.getElementById('reset-confirm'),
       resetMsg: document.getElementById('reset-msg'),
+      resetLevels: document.getElementById('reset-levels'),
       tierPrev: document.getElementById('tier-prev'),
       tierNext: document.getElementById('tier-next')
     };
@@ -642,6 +643,15 @@ if (typeof document !== 'undefined' && document.getElementById && document.getEl
       els.pauseBtn.disabled = true;
       els.tierPrev.disabled = true;
       els.tierNext.disabled = true;
+      // One chip per level from 1 up to the level the map has reached (a "restart" never goes above where they are).
+      els.resetLevels.innerHTML = '';
+      for (var n = 1; n <= Math.max(1, state.maxFactor); n++) {
+        var chip = document.createElement('button');
+        chip.className = 'key';
+        chip.setAttribute('data-reset-level', n);
+        chip.textContent = n + '×' + n;
+        els.resetLevels.appendChild(chip);
+      }
       els.pauseStats.textContent = state.sessionAnswered + ' answered this session (' + state.sessionCorrect + ' correct).';
       els.pauseScreen.classList.remove('hidden');
     }
@@ -736,8 +746,9 @@ if (typeof document !== 'undefined' && document.getElementById && document.getEl
 
       els.pauseBtn.addEventListener('click', openPause);
       els.resumeBtn.addEventListener('click', closePause);
-      document.querySelectorAll('[data-reset-level]').forEach(function (b) {
-        b.addEventListener('click', function () { showResetPrompt(parseInt(b.getAttribute('data-reset-level'), 10)); });
+      els.resetLevels.addEventListener('click', function (e) {
+        var b = e.target.closest('[data-reset-level]');
+        if (b) showResetPrompt(parseInt(b.getAttribute('data-reset-level'), 10));
       });
       document.getElementById('reset-yes').addEventListener('click', function () { startOver(pendingLevel); });
       document.getElementById('reset-no').addEventListener('click', function () { showResetPrompt(null); });

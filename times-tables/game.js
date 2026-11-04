@@ -140,7 +140,7 @@ function selectTarget(gridState, maxFactor, rand) {
 function numberLinePlan(a, b) {
   var stops = [];
   for (var i = 1; i <= a; i++) stops.push(i * b);
-  return { jumps: a, size: b, stops: stops, max: TUNE.FULL_MAX_FACTOR * TUNE.FULL_MAX_FACTOR };
+  return { jumps: a, size: b, stops: stops, max: a * b };
 }
 
 // (a,b) and (b,a) are deliberately independent facts -- no mirror
@@ -680,11 +680,11 @@ if (typeof document !== 'undefined' && document.getElementById && document.getEl
     // Opened on demand from the sidebar. Hop takes one jump; the landing shows as "?" and the boys type the number they
     // landed on before Hop works again. The last landing (the answer to the fact) is never filled in: they close the
     // line and type it as usual. Using it means that turn doesn't build mastery.
-    var NL = { lo: 0, hi: 0, w: 400, pad: 14, y: 78, plan: null, done: 0, awaiting: false, typed: '', token: null, q: null };
+    var NL = { w: 400, pad: 14, y: 78, plan: null, done: 0, awaiting: false, typed: '', token: null, q: null };
     var SVGNS = 'http://www.w3.org/2000/svg';
-    // The line is zoomed to the current jump (start .. start+size) so every unit is a labelled tick. The landing tick is
-    // left unlabeled; it only gets a number once the boys type it. Each Hop re-centres on the new start.
-    function nlX(v) { return NL.pad + (NL.w - 2 * NL.pad) * (v - NL.lo + 0.6) / (NL.hi - NL.lo + 1.2); }
+    // The line is scaled to the real answer (0 .. a*b), so the length of each jump is true to size. Only the numbers the
+    // boys already know are written on it: 0 and each landing they have typed. Every upcoming landing is an unlabeled dot.
+    function nlX(v) { return NL.pad + (NL.w - 2 * NL.pad) * v / NL.plan.max; }
     function nlEl(tag, attrs, text) {
       var e = document.createElementNS(SVGNS, tag);
       for (var k in attrs) e.setAttribute(k, attrs[k]);
@@ -692,18 +692,32 @@ if (typeof document !== 'undefined' && document.getElementById && document.getEl
       els.numlineSvg.appendChild(e);
       return e;
     }
-    function drawNumberLine(from) {
-      var svg = els.numlineSvg;
+    // hops = jumps drawn so far; known = landings typed correctly so far.
+    function drawNumberLine(hops, known, animate) {
+      var plan = NL.plan, svg = els.numlineSvg, y = NL.y;
       svg.innerHTML = '';
-      NL.lo = from; NL.hi = from + NL.plan.size;
       svg.setAttribute('viewBox', '0 0 ' + NL.w + ' 130');
-      nlEl('line', { x1: nlX(NL.lo - 0.6), y1: NL.y, x2: nlX(NL.hi + 0.6), y2: NL.y, stroke: '#cfd0ff', 'stroke-width': 3, 'stroke-linecap': 'round' });
-      for (var v = NL.lo; v <= NL.hi; v++) {
-        nlEl('line', { x1: nlX(v), y1: NL.y - 6, x2: nlX(v), y2: NL.y + 6, stroke: '#8a8cc0', 'stroke-width': 2 });
-        if (v < NL.hi) nlEl('text', { x: nlX(v), y: NL.y + 24, 'text-anchor': 'middle', fill: '#dde', 'font-size': 13 }, v);
+      nlEl('line', { x1: nlX(0), y1: y, x2: nlX(plan.max), y2: y, stroke: '#cfd0ff', 'stroke-width': 3, 'stroke-linecap': 'round' });
+      nlEl('line', { x1: nlX(0), y1: y - 7, x2: nlX(0), y2: y + 7, stroke: '#8a8cc0', 'stroke-width': 2 });
+      nlEl('text', { x: nlX(0), y: y + 24, 'text-anchor': 'middle', fill: '#dde', 'font-size': 13 }, 0);
+      for (var i = 0; i < plan.stops.length; i++) {
+        var x = nlX(plan.stops[i]);
+        nlEl('circle', { cx: x, cy: y, r: 3, fill: i < hops ? '#ffd23f' : '#6a6ca0' });
+        if (i < known) nlEl('text', { x: x, y: y + 24, 'text-anchor': 'middle', fill: '#fff', 'font-size': plan.stops.length > 8 ? 9 : 12 }, plan.stops[i]);
       }
-      NL.token = nlEl('text', { x: nlX(from), y: NL.y - 4, 'text-anchor': 'middle', 'font-size': 22, class: 'nl-token' }, '🧭');
-      NL.token.style.transition = 'transform 0.28s ease-out';
+      for (var h = 0; h < hops; h++) {
+        var x1 = nlX(h ? plan.stops[h - 1] : 0), x2 = nlX(plan.stops[h]), mid = (x1 + x2) / 2;
+        nlEl('path', { d: 'M' + x1 + ' ' + y + ' Q' + mid + ' ' + (y - 46) + ' ' + x2 + ' ' + y,
+          fill: 'none', stroke: '#ffd23f', 'stroke-width': 2.5, 'stroke-linecap': 'round' });
+        if (h === hops - 1 && hops > known) NL.q = nlEl('text', { x: x2, y: y + 40, 'text-anchor': 'middle', 'font-size': 18, 'font-weight': 'bold', fill: '#ff5a6e' }, '?');
+      }
+      var prev = hops > 1 ? plan.stops[hops - 2] : 0, cur = hops ? plan.stops[hops - 1] : 0;
+      NL.token = nlEl('text', { x: nlX(animate ? prev : cur), y: y - 4, 'text-anchor': 'middle', 'font-size': 22, class: 'nl-token' }, '🧭');
+      if (animate) {
+        NL.token.style.transition = 'transform 0.28s ease-out';
+        var tk = NL.token;
+        requestAnimationFrame(function () { requestAnimationFrame(function () { tk.style.transform = 'translateX(' + (nlX(cur) - nlX(prev)) + 'px)'; }); });
+      }
     }
     function nlRenderEntry() {
       els.numlineEntry.classList.toggle('hidden', !NL.awaiting);
@@ -715,16 +729,9 @@ if (typeof document !== 'undefined' && document.getElementById && document.getEl
       var plan = NL.plan;
       if (NL.awaiting || NL.done >= plan.jumps) return;
       var from = NL.done ? plan.stops[NL.done - 1] : 0, to = plan.stops[NL.done];
-      if (NL.done) drawNumberLine(from);
-      var x1 = nlX(from), x2 = nlX(to), mid = (x1 + x2) / 2;
-      nlEl('path', { d: 'M' + x1 + ' ' + NL.y + ' Q' + mid + ' ' + (NL.y - 52) + ' ' + x2 + ' ' + NL.y,
-        fill: 'none', stroke: '#ffd23f', 'stroke-width': 2.5, 'stroke-linecap': 'round' });
-      if (x2 - x1 > 26) nlEl('text', { x: mid, y: NL.y - 30, 'text-anchor': 'middle', fill: '#ffd23f', 'font-size': 11 }, '+' + plan.size);
       NL.done++;
       var last = NL.done === plan.jumps;
-      nlEl('circle', { cx: x2, cy: NL.y, r: 4, fill: last ? '#ff5a6e' : '#ffd23f' });
-      NL.q = nlEl('text', { x: x2, y: NL.y + 40, 'text-anchor': 'middle', 'font-size': 18, 'font-weight': 'bold', fill: '#ff5a6e' }, '?');
-      NL.token.style.transform = 'translateX(' + (x2 - nlX(from)) + 'px)';
+      drawNumberLine(NL.done, NL.done - 1, true);
       beep(440 + 40 * NL.done, 0.06);
       NL.typed = '';
       if (last) {
@@ -747,9 +754,7 @@ if (typeof document !== 'undefined' && document.getElementById && document.getEl
       if (!NL.typed) return;
       var want = NL.plan.stops[NL.done - 1];
       if (parseInt(NL.typed, 10) === want) {
-        NL.q.textContent = want;
-        NL.q.setAttribute('fill', '#fff');
-        NL.q.setAttribute('font-size', 12);
+        drawNumberLine(NL.done, NL.done, false);
         NL.awaiting = false;
         NL.typed = '';
         beep(880, 0.1);
@@ -772,7 +777,7 @@ if (typeof document !== 'undefined' && document.getElementById && document.getEl
       els.tierNext.disabled = true;
       NL.plan = numberLinePlan(state.target[0], state.target[1]);
       NL.done = 0; NL.awaiting = false; NL.typed = '';
-      drawNumberLine(0);
+      drawNumberLine(0, 0, false);
       els.numlineCaption.textContent = state.target[0] + ' × ' + state.target[1] + ' means ' + NL.plan.jumps +
         ' jumps of ' + NL.plan.size + '. Start at 0 and tap Hop!';
       nlRenderEntry();

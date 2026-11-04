@@ -119,7 +119,7 @@ check('replayLog reconstructs grid state and tier from a synthetic event log', f
 check('numberLinePlan reads a x b as a jumps of b on a fixed 0-100 line and ends on the product', function () {
   var p = game.numberLinePlan(7, 6);
   assert.deepStrictEqual(p.stops, [6, 12, 18, 24, 30, 36, 42]);
-  assert.strictEqual(p.jumps, 7); assert.strictEqual(p.size, 6); assert.strictEqual(p.max, 100);
+  assert.strictEqual(p.jumps, 7); assert.strictEqual(p.size, 6); assert.strictEqual(p.max, 42);
   assert.deepStrictEqual(game.numberLinePlan(1, 9).stops, [9]);
   assert.strictEqual(game.numberLinePlan(10, 10).stops[9], 100);
 });

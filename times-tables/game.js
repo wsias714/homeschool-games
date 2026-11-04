@@ -100,8 +100,8 @@ function tierMastered(gridState, maxFactor) {
 
 // Derives the current tier from grid state alone (event-sourced --
 // no separately-stored "current tier" that could drift from the log).
-function computeMaxFactor(gridState) {
-  var maxFactor = TUNE.START_MAX_FACTOR;
+function computeMaxFactor(gridState, startLevel) {
+  var maxFactor = startLevel || TUNE.START_MAX_FACTOR;
   while (maxFactor < TUNE.FULL_MAX_FACTOR && tierMastered(gridState, maxFactor)) {
     maxFactor++;
   }
@@ -148,12 +148,33 @@ function applyAnswer(gridState, a, b, correct) {
 // Rebuilds grid state from the server's event log -- this is how
 // progress survives a reload/new session with no localStorage.
 function replayLog(records) {
+  return replayState(records).gridState;
+}
+
+// "Start over" is a marker in the log ({reset: true, level: 1|2}), never a deletion: the full answer history stays
+// for the tracker. Replaying a reset clears the grid and sets the level the map starts from again.
+function isReset(r) { return !!r && r.reset === true; }
+
+function sortedByTime(records) {
+  return records.filter(Boolean).map(function (r, i) { return [r, i]; }).sort(function (x, y) {
+    var tx = new Date(x[0].server_timestamp || 0), ty = new Date(y[0].server_timestamp || 0);
+    return (tx - ty) || (x[1] - y[1]);
+  }).map(function (p) { return p[0]; });
+}
+
+function replayState(records) {
   var gridState = {};
-  records.forEach(function (r) {
-    if (!r || (r.game && r.game !== 'times-tables')) return;
+  var startLevel = TUNE.START_MAX_FACTOR;
+  sortedByTime(records).forEach(function (r) {
+    if (r.game && r.game !== 'times-tables') return;
+    if (isReset(r)) {
+      gridState = {};
+      startLevel = Math.max(1, Math.min(TUNE.FULL_MAX_FACTOR, parseInt(r.level, 10) || TUNE.START_MAX_FACTOR));
+      return;
+    }
     applyAnswer(gridState, r.a, r.b, r.correct === true);
   });
-  return gridState;
+  return { gridState: gridState, startLevel: startLevel };
 }
 
 // The footprint trail: replays the log in chronological order and
@@ -161,15 +182,14 @@ function replayLog(records) {
 // MASTERY_TARGET. Independent from replayLog's final tallies -- this
 // is about *when* mastery happened, not just the end state.
 function masteryOrder(records) {
-  var chronological = records.filter(Boolean).sort(function (x, y) {
-    return new Date(x.server_timestamp || 0) - new Date(y.server_timestamp || 0);
-  });
+  var chronological = sortedByTime(records);
   var counts = {};
   var seen = {};
   var order = [];
 
   chronological.forEach(function (r) {
     if (r.game && r.game !== 'times-tables') return;
+    if (isReset(r)) { counts = {}; seen = {}; order = []; return; }
     var key = cellKey(r.a, r.b);
     var c = counts[key] || 0;
     if (r.correct === true) c++;
@@ -193,6 +213,7 @@ if (typeof document !== 'undefined' && document.getElementById && document.getEl
     var state = {
       gridState: {},
       maxFactor: TUNE.START_MAX_FACTOR,
+      startLevel: TUNE.START_MAX_FACTOR,
       turn: 0,
       target: null,
       typed: '',
@@ -231,6 +252,9 @@ if (typeof document !== 'undefined' && document.getElementById && document.getEl
       pauseStats: document.getElementById('pause-stats'),
       resumeBtn: document.getElementById('resume-btn'),
       closeTabBtn: document.getElementById('close-tab-btn'),
+      resetPick: document.getElementById('reset-pick'),
+      resetConfirm: document.getElementById('reset-confirm'),
+      resetMsg: document.getElementById('reset-msg'),
       tierPrev: document.getElementById('tier-prev'),
       tierNext: document.getElementById('tier-next')
     };
@@ -570,7 +594,7 @@ if (typeof document !== 'undefined' && document.getElementById && document.getEl
         drawTrail();
 
         var wasFactor = state.maxFactor;
-        state.maxFactor = computeMaxFactor(state.gridState);
+        state.maxFactor = computeMaxFactor(state.gridState, state.startLevel);
         var grew = state.maxFactor > wasFactor;
         var complete = isGameComplete(state.gridState);
 
@@ -622,7 +646,51 @@ if (typeof document !== 'undefined' && document.getElementById && document.getEl
       els.pauseScreen.classList.remove('hidden');
     }
 
+    // ---------- start over (pause screen) ----------
+    // Two taps (pick a level, then confirm) so the boys can't wipe the map by accident. The reset is written to the
+    // log first; if the server can't be reached nothing changes, so a reload never brings the old map back.
+    var pendingLevel = null;
+    function showResetPrompt(level) {
+      pendingLevel = level;
+      els.resetPick.classList.toggle('hidden', level !== null);
+      els.resetConfirm.classList.toggle('hidden', level === null);
+      els.resetMsg.textContent = level === null ? '' :
+        'Start over at ' + level + '×' + level + '? The pictures on the map are cleared. Every past session stays saved.';
+    }
+
+    function startOver(level) {
+      els.resetMsg.textContent = 'Starting over…';
+      fetch('/api/track', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ game: 'times-tables', session_id: state.sessionId, reset: true, level: level,
+          tier: state.maxFactor })
+      }).then(function (r) {
+        if (!r.ok) throw new Error('server ' + r.status);
+        state.gridState = {};
+        state.startLevel = level;
+        state.maxFactor = level;
+        state.trail = [];
+        state.typed = '';
+        state.turn = 0;
+        buildGridDom(level);
+        renderTier();
+        els.winScreen.classList.add('hidden');
+        els.questionPanel.classList.remove('hidden');
+        pickNewTarget();
+        renderTurn();
+        showResetPrompt(null);
+        closePause();
+        flashFeedback('Fresh map — ' + level + '×' + level + '!', true);
+      }).catch(function () {
+        els.resetMsg.textContent = 'Could not reach the game server, so nothing was changed.';
+        els.resetPick.classList.remove('hidden');
+        els.resetConfirm.classList.add('hidden');
+      });
+    }
+
     function closePause() {
+      showResetPrompt(null);
       els.pauseScreen.classList.add('hidden');
       state.locked = false;
       els.keypad.classList.remove('locked');
@@ -634,8 +702,10 @@ if (typeof document !== 'undefined' && document.getElementById && document.getEl
       fetch('/api/sessions?game=times-tables')
         .then(function (r) { return r.json(); })
         .then(function (records) {
-          state.gridState = replayLog(records);
-          state.maxFactor = computeMaxFactor(state.gridState);
+          var replayed = replayState(records);
+          state.gridState = replayed.gridState;
+          state.startLevel = replayed.startLevel;
+          state.maxFactor = computeMaxFactor(state.gridState, state.startLevel);
           state.trail = masteryOrder(records).slice(-TUNE.TRAIL_LENGTH);
 
           buildGridDom(state.maxFactor);
@@ -666,6 +736,11 @@ if (typeof document !== 'undefined' && document.getElementById && document.getEl
 
       els.pauseBtn.addEventListener('click', openPause);
       els.resumeBtn.addEventListener('click', closePause);
+      document.querySelectorAll('[data-reset-level]').forEach(function (b) {
+        b.addEventListener('click', function () { showResetPrompt(parseInt(b.getAttribute('data-reset-level'), 10)); });
+      });
+      document.getElementById('reset-yes').addEventListener('click', function () { startOver(pendingLevel); });
+      document.getElementById('reset-no').addEventListener('click', function () { showResetPrompt(null); });
       els.closeTabBtn.addEventListener('click', function () {
         window.close();
       });
@@ -693,6 +768,7 @@ if (typeof module !== 'undefined' && module.exports) {
     selectTarget: selectTarget,
     applyAnswer: applyAnswer,
     replayLog: replayLog,
+    replayState: replayState,
     masteryOrder: masteryOrder,
     glyphForCell: glyphForCell,
     FOG_ICON: FOG_ICON,

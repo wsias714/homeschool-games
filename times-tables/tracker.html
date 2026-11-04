@@ -98,6 +98,8 @@ var FULL_MAX_FACTOR = 10;
 fetch('/api/sessions?game=times-tables')
   .then(function (r) { return r.json(); })
   .then(function (records) {
+    // "Start over" markers are kept in the log but are not answers.
+    records = records.filter(function (r) { return !r.reset; });
     records.sort(function (a, b) {
       return new Date(b.server_timestamp || 0) - new Date(a.server_timestamp || 0);
     });

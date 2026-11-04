@@ -61,6 +61,18 @@
       <button id="resume-btn" class="key go">▶ Resume</button>
       <button id="close-tab-btn" class="key back">✕ Close Tab</button>
     </div>
+    <div id="reset-box">
+      <div id="reset-pick">
+        <span class="reset-label">Start the map over:</span>
+        <button class="key" data-reset-level="1">1×1</button>
+        <button class="key" data-reset-level="2">2×2</button>
+      </div>
+      <div id="reset-confirm" class="hidden">
+        <button id="reset-yes" class="key go">Yes, start over</button>
+        <button id="reset-no" class="key back">Cancel</button>
+      </div>
+      <p id="reset-msg"></p>
+    </div>
     <p id="pause-hint">Your progress is saved — you can close this tab now, or hit Resume to keep going.</p>
   </div>
 

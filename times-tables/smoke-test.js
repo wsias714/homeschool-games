@@ -115,6 +115,32 @@ check('replayLog reconstructs grid state and tier from a synthetic event log', f
   assert.strictEqual(g[game.cellKey(9, 9)], undefined, 'records from other games must not leak in');
 });
 
+// ---------- start over ----------
+check('a reset marker clears the map and restarts at the chosen level, keeping nothing from before', function () {
+  var records = [];
+  game.unlockedCells(7).forEach(function (p) {
+    for (var i = 0; i < game.TUNE.MASTERY_TARGET; i++) records.push({ game: 'times-tables', a: p[0], b: p[1], correct: true, server_timestamp: '2026-01-01T00:00:01Z' });
+  });
+  assert.strictEqual(game.computeMaxFactor(game.replayLog(records)), 8);
+  records.push({ game: 'times-tables', reset: true, level: 1, server_timestamp: '2026-01-02T00:00:00Z' });
+  var st = game.replayState(records);
+  assert.deepStrictEqual(st.gridState, {});
+  assert.strictEqual(st.startLevel, 1);
+  assert.strictEqual(game.computeMaxFactor(st.gridState, st.startLevel), 1);
+  assert.deepStrictEqual(game.masteryOrder(records), []);
+  // answers after the reset count again; mastering 1x1 grows the map to 2
+  for (var i = 0; i < 3; i++) records.push({ game: 'times-tables', a: 1, b: 1, correct: true, server_timestamp: '2026-01-02T00:00:0' + (i + 1) + 'Z' });
+  var st2 = game.replayState(records);
+  assert.strictEqual(game.computeMaxFactor(st2.gridState, st2.startLevel), 2);
+  assert.deepStrictEqual(game.masteryOrder(records), [[1, 1]]);
+});
+
+check('a reset to 2 behaves like the original start', function () {
+  var st = game.replayState([{ game: 'times-tables', reset: true, level: 2 }]);
+  assert.strictEqual(game.computeMaxFactor(st.gridState, st.startLevel), 2);
+  assert.strictEqual(game.replayState([]).startLevel, game.TUNE.START_MAX_FACTOR);
+});
+
 // ---------- footprint trail ordering ----------
 check('masteryOrder returns cells in the chronological order they first hit MASTERY_TARGET', function () {
   var records = [

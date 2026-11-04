@@ -115,6 +115,24 @@ check('replayLog reconstructs grid state and tier from a synthetic event log', f
   assert.strictEqual(g[game.cellKey(9, 9)], undefined, 'records from other games must not leak in');
 });
 
+// ---------- number-line help ----------
+check('numberLinePlan reads a x b as a jumps of b on a fixed 0-100 line and ends on the product', function () {
+  var p = game.numberLinePlan(7, 6);
+  assert.deepStrictEqual(p.stops, [6, 12, 18, 24, 30, 36, 42]);
+  assert.strictEqual(p.jumps, 7); assert.strictEqual(p.size, 6); assert.strictEqual(p.max, 100);
+  assert.deepStrictEqual(game.numberLinePlan(1, 9).stops, [9]);
+  assert.strictEqual(game.numberLinePlan(10, 10).stops[9], 100);
+});
+
+check('helped answers are logged but do not build mastery', function () {
+  var recs = [];
+  for (var i = 0; i < 3; i++) recs.push({ game: 'times-tables', a: 2, b: 2, correct: true, helped: true });
+  assert.strictEqual(game.isMastered(game.replayLog(recs)[game.cellKey(2, 2)]), false);
+  recs.push({ game: 'times-tables', a: 2, b: 2, correct: true });
+  assert.strictEqual(game.replayLog(recs)[game.cellKey(2, 2)].correct, 1);
+  assert.deepStrictEqual(game.masteryOrder(recs), []);
+});
+
 // ---------- start over ----------
 check('a reset marker clears the map and restarts at the chosen level, keeping nothing from before', function () {
   var records = [];

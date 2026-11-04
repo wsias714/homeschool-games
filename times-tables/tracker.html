@@ -128,7 +128,7 @@ fetch('/api/sessions?game=times-tables')
     chronological.forEach(function (r) {
       var key = r.a + ',' + r.b;
       var cell = gridState[key] || { correct: 0, wrong: 0 };
-      if (r.correct) cell.correct++; else cell.wrong++;
+      if (r.correct && !r.helped) cell.correct++; else if (!r.correct) cell.wrong++;
       gridState[key] = cell;
     });
     renderHeatmap(gridState);

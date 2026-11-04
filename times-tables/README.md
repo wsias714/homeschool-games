@@ -38,6 +38,15 @@ The pause screen has "Start the map over at:" with a chip for every level from 1
 at the last marker and restarts from that level, so every past session stays in the tracker (the lifetime heatmap
 and answer list ignore the markers). If the server can't be reached, nothing changes.
 
+## Number line help
+
+The "📏 Number line" button (between Easier and Harder) opens a 0–100 number line for the current fact, read as
+*a jumps of b* (7 × 6 = 7 jumps of 6). **Hop** takes one jump at a time with running totals; **Show me** plays every
+jump but the last. The last landing is always a "?", so the answer still has to be typed. The line is the same
+0–100 scale for every fact so it never hints at the size of the answer. A turn that used the help is logged with
+`helped: true` and does not count toward mastering that fact (wrong answers still count); the tracker's heatmap
+follows the same rule.
+
 ## Run
 
 Needs the shared homeschool game server (it's what makes progress persist

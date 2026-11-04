@@ -135,6 +135,14 @@ function selectTarget(gridState, maxFactor, rand) {
   return leastPracticed[Math.floor(rand() * leastPracticed.length)];
 }
 
+// Number-line help: "a x b" is read as a jumps of b along a fixed 0..100 line (the same scale for every fact, so
+// the line never hints at the size of the answer). `stops` are the landing spots; the game never shows the last one.
+function numberLinePlan(a, b) {
+  var stops = [];
+  for (var i = 1; i <= a; i++) stops.push(i * b);
+  return { jumps: a, size: b, stops: stops, max: TUNE.FULL_MAX_FACTOR * TUNE.FULL_MAX_FACTOR };
+}
+
 // (a,b) and (b,a) are deliberately independent facts -- no mirror
 // shortcut. Mastering 3x7 does not touch 7x3's state.
 function applyAnswer(gridState, a, b, correct) {
@@ -172,7 +180,7 @@ function replayState(records) {
       startLevel = Math.max(1, Math.min(TUNE.FULL_MAX_FACTOR, parseInt(r.level, 10) || TUNE.START_MAX_FACTOR));
       return;
     }
-    applyAnswer(gridState, r.a, r.b, r.correct === true);
+    applyAnswer(gridState, r.a, r.b, r.correct === true && !r.helped);
   });
   return { gridState: gridState, startLevel: startLevel };
 }
@@ -192,7 +200,7 @@ function masteryOrder(records) {
     if (isReset(r)) { counts = {}; seen = {}; order = []; return; }
     var key = cellKey(r.a, r.b);
     var c = counts[key] || 0;
-    if (r.correct === true) c++;
+    if (r.correct === true && !r.helped) c++;
     counts[key] = c;
     if (c >= TUNE.MASTERY_TARGET && !seen[key]) {
       seen[key] = true;
@@ -221,6 +229,7 @@ if (typeof document !== 'undefined' && document.getElementById && document.getEl
       cellPx: 40,
       trail: [],
       sessionId: 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
+      helped: false,
       sessionAnswered: 0,
       sessionCorrect: 0
     };
@@ -256,6 +265,13 @@ if (typeof document !== 'undefined' && document.getElementById && document.getEl
       resetConfirm: document.getElementById('reset-confirm'),
       resetMsg: document.getElementById('reset-msg'),
       resetLevels: document.getElementById('reset-levels'),
+      numlineBtn: document.getElementById('numline-btn'),
+      numline: document.getElementById('numline'),
+      numlineCaption: document.getElementById('numline-caption'),
+      numlineSvg: document.getElementById('numline-svg'),
+      numlineHop: document.getElementById('numline-hop'),
+      numlineShow: document.getElementById('numline-show'),
+      numlineClose: document.getElementById('numline-close'),
       tierPrev: document.getElementById('tier-prev'),
       tierNext: document.getElementById('tier-next')
     };
@@ -506,6 +522,7 @@ if (typeof document !== 'undefined' && document.getElementById && document.getEl
 
     function pickNewTarget() {
       state.target = selectTarget(state.gridState, state.maxFactor, Math.random);
+      state.helped = false;
       state.typed = '';
       renderFact();
       positionMarker();
@@ -527,6 +544,7 @@ if (typeof document !== 'undefined' && document.getElementById && document.getEl
       var n = Math.max(state.target[0], state.target[1]) + direction;
       if (n < 1 || n > state.maxFactor) return;
       state.target = [n, n];
+      state.helped = false;
       state.typed = '';
       renderFact();
       positionMarker();
@@ -555,7 +573,7 @@ if (typeof document !== 'undefined' && document.getElementById && document.getEl
           game: 'times-tables',
           session_id: state.sessionId,
           player: currentPlayer(),
-          a: a, b: b, correct: correct,
+          a: a, b: b, correct: correct, helped: state.helped,
           tier: state.maxFactor
         })
       }).catch(function () { /* tracking is best-effort, never blocks the game */ });
@@ -579,7 +597,7 @@ if (typeof document !== 'undefined' && document.getElementById && document.getEl
       state.sessionAnswered++;
       if (correct) state.sessionCorrect++;
 
-      applyAnswer(state.gridState, a, b, correct);
+      applyAnswer(state.gridState, a, b, correct && !state.helped);
       track(a, b, correct);
 
       if (correct) {
@@ -654,6 +672,88 @@ if (typeof document !== 'undefined' && document.getElementById && document.getEl
       }
       els.pauseStats.textContent = state.sessionAnswered + ' answered this session (' + state.sessionCorrect + ' correct).';
       els.pauseScreen.classList.remove('hidden');
+    }
+
+    // ---------- number-line help ----------
+    // Opened on demand from the sidebar. Tap Hop to take one jump at a time; running totals appear at each landing and
+    // the last landing is a "?" so the answer still has to be typed. Using it means that turn doesn't build mastery.
+    var NL = { w: 400, pad: 14, y: 78, plan: null, done: 0, timer: null, token: null };
+    var SVGNS = 'http://www.w3.org/2000/svg';
+    function nlX(v) { return NL.pad + (NL.w - 2 * NL.pad) * v / NL.plan.max; }
+    function nlEl(tag, attrs, text) {
+      var e = document.createElementNS(SVGNS, tag);
+      for (var k in attrs) e.setAttribute(k, attrs[k]);
+      if (text !== undefined) e.textContent = text;
+      els.numlineSvg.appendChild(e);
+      return e;
+    }
+    function drawNumberLine() {
+      var svg = els.numlineSvg;
+      svg.innerHTML = '';
+      svg.setAttribute('viewBox', '0 0 ' + NL.w + ' 130');
+      nlEl('line', { x1: nlX(0), y1: NL.y, x2: nlX(NL.plan.max), y2: NL.y, stroke: '#cfd0ff', 'stroke-width': 3, 'stroke-linecap': 'round' });
+      for (var v = 0; v <= NL.plan.max; v += 5) {
+        var major = v % 10 === 0;
+        nlEl('line', { x1: nlX(v), y1: NL.y - (major ? 7 : 4), x2: nlX(v), y2: NL.y + (major ? 7 : 4), stroke: '#8a8cc0', 'stroke-width': major ? 2 : 1 });
+        if (major) nlEl('text', { x: nlX(v), y: NL.y + 22, 'text-anchor': 'middle', fill: '#aab', 'font-size': 11 }, v);
+      }
+      NL.token = nlEl('text', { x: nlX(0), y: NL.y - 4, 'text-anchor': 'middle', 'font-size': 22, class: 'nl-token' }, '🧭');
+      NL.token.style.transition = 'transform 0.28s ease-out';
+    }
+    function nlHop() {
+      var plan = NL.plan;
+      if (NL.done >= plan.jumps) return false;
+      var from = NL.done ? plan.stops[NL.done - 1] : 0, to = plan.stops[NL.done];
+      var x1 = nlX(from), x2 = nlX(to), mid = (x1 + x2) / 2;
+      nlEl('path', { d: 'M' + x1 + ' ' + NL.y + ' Q' + mid + ' ' + (NL.y - 52) + ' ' + x2 + ' ' + NL.y,
+        fill: 'none', stroke: '#ffd23f', 'stroke-width': 2.5, 'stroke-linecap': 'round' });
+      if (x2 - x1 > 26) nlEl('text', { x: mid, y: NL.y - 30, 'text-anchor': 'middle', fill: '#ffd23f', 'font-size': 11 }, '+' + plan.size);
+      NL.done++;
+      var last = NL.done === plan.jumps;
+      nlEl('circle', { cx: x2, cy: NL.y, r: 4, fill: last ? '#ff5a6e' : '#ffd23f' });
+      nlEl('text', { x: x2, y: NL.y + 40, 'text-anchor': 'middle', 'font-size': last ? 18 : 12, 'font-weight': 'bold',
+        fill: last ? '#ff5a6e' : '#fff' }, last ? '?' : to);
+      NL.token.style.transform = 'translateX(' + (x2 - nlX(0)) + 'px)';
+      beep(440 + 40 * NL.done, 0.06);
+      els.numlineCaption.textContent = last ?
+        plan.jumps + ' jumps of ' + plan.size + ' — where did you land? Close this and type it.' :
+        'Jump ' + NL.done + ' of ' + plan.jumps + ': you are at ' + to + '.';
+      els.numlineHop.disabled = last;
+      return !last;
+    }
+    function nlOpen() {
+      if (state.locked || !state.target) return;
+      state.locked = true;
+      state.helped = true;
+      els.keypad.classList.add('locked');
+      els.pauseBtn.disabled = true;
+      els.tierPrev.disabled = true;
+      els.tierNext.disabled = true;
+      NL.plan = numberLinePlan(state.target[0], state.target[1]);
+      NL.done = 0;
+      drawNumberLine();
+      els.numlineCaption.textContent = state.target[0] + ' × ' + state.target[1] + ' means ' + NL.plan.jumps +
+        ' jumps of ' + NL.plan.size + '. Start at 0 and tap Hop!';
+      els.numlineHop.disabled = false;
+      els.numline.classList.remove('hidden');
+    }
+    function nlClose() {
+      clearInterval(NL.timer);
+      els.numline.classList.add('hidden');
+      state.locked = false;
+      els.keypad.classList.remove('locked');
+      els.pauseBtn.disabled = false;
+      refreshNavButtons();
+    }
+    // "Show me": hops every jump except the last, then stops so the boys take the final one themselves.
+    function nlShow() {
+      if (NL.done) { drawNumberLine(); NL.done = 0; }
+      els.numlineShow.disabled = true;
+      clearInterval(NL.timer);
+      NL.timer = setInterval(function () {
+        if (NL.done >= NL.plan.jumps - 1) { clearInterval(NL.timer); els.numlineShow.disabled = false; return; }
+        nlHop();
+      }, 380);
     }
 
     // ---------- start over (pause screen) ----------
@@ -746,6 +846,10 @@ if (typeof document !== 'undefined' && document.getElementById && document.getEl
 
       els.pauseBtn.addEventListener('click', openPause);
       els.resumeBtn.addEventListener('click', closePause);
+      els.numlineBtn.addEventListener('click', nlOpen);
+      els.numlineHop.addEventListener('click', nlHop);
+      els.numlineShow.addEventListener('click', nlShow);
+      els.numlineClose.addEventListener('click', nlClose);
       els.resetLevels.addEventListener('click', function (e) {
         var b = e.target.closest('[data-reset-level]');
         if (b) showResetPrompt(parseInt(b.getAttribute('data-reset-level'), 10));
@@ -782,6 +886,7 @@ if (typeof module !== 'undefined' && module.exports) {
     replayState: replayState,
     masteryOrder: masteryOrder,
     glyphForCell: glyphForCell,
+    numberLinePlan: numberLinePlan,
     FOG_ICON: FOG_ICON,
     FLAG_ICON: FLAG_ICON
   };

@@ -28,6 +28,7 @@
     <div id="question-panel">
       <div id="tier-nav">
         <button id="tier-prev" class="nav-btn" title="Practice an easier tier">◀ Easier</button>
+        <button id="numline-btn" class="nav-btn" title="See this fact as jumps on a number line">📏 Number line</button>
         <button id="tier-next" class="nav-btn" title="Practice a harder tier">Harder ▶</button>
       </div>
       <div id="fact-display"><span id="fact-text"></span><span id="answer-display"></span><span id="cursor">_</span></div>
@@ -52,6 +53,20 @@
   <div id="win-screen" class="hidden">
     <h2>🏆 YOU MASTERED THE WHOLE MAP! 🏆</h2>
     <p id="win-stats"></p>
+  </div>
+
+  <div id="numline" class="hidden">
+    <div id="numline-card">
+      <h3>📏 Number line</h3>
+      <p id="numline-caption"></p>
+      <svg id="numline-svg" role="img" aria-label="Number line from 0 to 100 showing the jumps"></svg>
+      <div id="numline-actions">
+        <button id="numline-hop" class="key go">Hop ▶</button>
+        <button id="numline-show" class="key">Show me</button>
+        <button id="numline-close" class="key back">Close</button>
+      </div>
+      <p id="numline-note">Using help? That turn won’t count toward the flag — but it’s a great way to learn the fact.</p>
+    </div>
   </div>
 
   <div id="pause-screen" class="hidden">

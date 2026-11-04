@@ -417,6 +417,11 @@ header h1 {
 #numline-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 8px; }
 #numline-actions .key { padding: 10px 22px; font-size: 1em; border-radius: 10px; min-height: unset; }
 #numline-actions .key:disabled { opacity: 0.4; }
+#numline-entry { font-size: 1.8em; font-weight: bold; margin-top: 6px; }
+#numline-entry .nl-cursor { color: #7cc9ff; animation: blink 1s step-start infinite; }
+#numline-entry.hidden, #numline-keys.hidden { display: none; }
+#numline-keys { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; margin: 8px auto 0; max-width: 420px; }
+#numline-keys .key { padding: 8px 0; font-size: 1.1em; min-height: unset; border-radius: 8px; }
 #numline-note { color: #8a8cc0; font-size: 0.8em; margin: 10px 0 0; }
 #tier-nav .nav-btn { white-space: nowrap; padding-left: 4px; padding-right: 4px; }
 @media (max-width: 480px) { #tier-nav .nav-btn { font-size: 0.72em; } }

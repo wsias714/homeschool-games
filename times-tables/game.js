@@ -270,7 +270,9 @@ if (typeof document !== 'undefined' && document.getElementById && document.getEl
       numlineCaption: document.getElementById('numline-caption'),
       numlineSvg: document.getElementById('numline-svg'),
       numlineHop: document.getElementById('numline-hop'),
-      numlineShow: document.getElementById('numline-show'),
+      numlineEntry: document.getElementById('numline-entry'),
+      numlineTyped: document.getElementById('numline-typed'),
+      numlineKeys: document.getElementById('numline-keys'),
       numlineClose: document.getElementById('numline-close'),
       tierPrev: document.getElementById('tier-prev'),
       tierNext: document.getElementById('tier-next')
@@ -675,9 +677,10 @@ if (typeof document !== 'undefined' && document.getElementById && document.getEl
     }
 
     // ---------- number-line help ----------
-    // Opened on demand from the sidebar. Tap Hop to take one jump at a time; running totals appear at each landing and
-    // the last landing is a "?" so the answer still has to be typed. Using it means that turn doesn't build mastery.
-    var NL = { w: 400, pad: 14, y: 78, plan: null, done: 0, timer: null, token: null };
+    // Opened on demand from the sidebar. Hop takes one jump; the landing shows as "?" and the boys type the number they
+    // landed on before Hop works again. The last landing (the answer to the fact) is never filled in: they close the
+    // line and type it as usual. Using it means that turn doesn't build mastery.
+    var NL = { w: 400, pad: 14, y: 78, plan: null, done: 0, awaiting: false, typed: '', token: null, q: null };
     var SVGNS = 'http://www.w3.org/2000/svg';
     function nlX(v) { return NL.pad + (NL.w - 2 * NL.pad) * v / NL.plan.max; }
     function nlEl(tag, attrs, text) {
@@ -700,9 +703,15 @@ if (typeof document !== 'undefined' && document.getElementById && document.getEl
       NL.token = nlEl('text', { x: nlX(0), y: NL.y - 4, 'text-anchor': 'middle', 'font-size': 22, class: 'nl-token' }, '🧭');
       NL.token.style.transition = 'transform 0.28s ease-out';
     }
+    function nlRenderEntry() {
+      els.numlineEntry.classList.toggle('hidden', !NL.awaiting);
+      els.numlineKeys.classList.toggle('hidden', !NL.awaiting);
+      els.numlineTyped.textContent = NL.typed;
+      els.numlineHop.disabled = NL.awaiting || NL.done >= NL.plan.jumps;
+    }
     function nlHop() {
       var plan = NL.plan;
-      if (NL.done >= plan.jumps) return false;
+      if (NL.awaiting || NL.done >= plan.jumps) return;
       var from = NL.done ? plan.stops[NL.done - 1] : 0, to = plan.stops[NL.done];
       var x1 = nlX(from), x2 = nlX(to), mid = (x1 + x2) / 2;
       nlEl('path', { d: 'M' + x1 + ' ' + NL.y + ' Q' + mid + ' ' + (NL.y - 52) + ' ' + x2 + ' ' + NL.y,
@@ -711,15 +720,44 @@ if (typeof document !== 'undefined' && document.getElementById && document.getEl
       NL.done++;
       var last = NL.done === plan.jumps;
       nlEl('circle', { cx: x2, cy: NL.y, r: 4, fill: last ? '#ff5a6e' : '#ffd23f' });
-      nlEl('text', { x: x2, y: NL.y + 40, 'text-anchor': 'middle', 'font-size': last ? 18 : 12, 'font-weight': 'bold',
-        fill: last ? '#ff5a6e' : '#fff' }, last ? '?' : to);
+      NL.q = nlEl('text', { x: x2, y: NL.y + 40, 'text-anchor': 'middle', 'font-size': 18, 'font-weight': 'bold', fill: '#ff5a6e' }, '?');
       NL.token.style.transform = 'translateX(' + (x2 - nlX(0)) + 'px)';
       beep(440 + 40 * NL.done, 0.06);
-      els.numlineCaption.textContent = last ?
-        plan.jumps + ' jumps of ' + plan.size + ' — where did you land? Close this and type it.' :
-        'Jump ' + NL.done + ' of ' + plan.jumps + ': you are at ' + to + '.';
-      els.numlineHop.disabled = last;
-      return !last;
+      NL.typed = '';
+      if (last) {
+        NL.awaiting = false;
+        els.numlineCaption.textContent = 'Last jump (' + plan.jumps + ' jumps of ' + plan.size + ')! Where did you land? Close this and type the answer.';
+      } else {
+        NL.awaiting = true;
+        els.numlineCaption.textContent = 'Jump ' + NL.done + ' of ' + plan.jumps + ': you were at ' + from + ' and jumped ' + plan.size + '. Where did you land?';
+      }
+      nlRenderEntry();
+    }
+    function nlKey(k) {
+      if (!NL.awaiting) return;
+      if (k === 'back') NL.typed = NL.typed.slice(0, -1);
+      else if (k === 'go') nlCheck();
+      else if (NL.typed.length < TUNE.MAX_DIGITS) NL.typed += k;
+      els.numlineTyped.textContent = NL.typed;
+    }
+    function nlCheck() {
+      if (!NL.typed) return;
+      var want = NL.plan.stops[NL.done - 1];
+      if (parseInt(NL.typed, 10) === want) {
+        NL.q.textContent = want;
+        NL.q.setAttribute('fill', '#fff');
+        NL.q.setAttribute('font-size', 12);
+        NL.awaiting = false;
+        NL.typed = '';
+        beep(880, 0.1);
+        els.numlineCaption.textContent = 'Yes, ' + want + '! Tap Hop for the next jump.';
+      } else {
+        var from = NL.done > 1 ? NL.plan.stops[NL.done - 2] : 0;
+        NL.typed = '';
+        beep(160, 0.15);
+        els.numlineCaption.textContent = 'Not quite. Start at ' + from + ' and count on ' + NL.plan.size + '. Try again!';
+      }
+      nlRenderEntry();
     }
     function nlOpen() {
       if (state.locked || !state.target) return;
@@ -730,31 +768,22 @@ if (typeof document !== 'undefined' && document.getElementById && document.getEl
       els.tierPrev.disabled = true;
       els.tierNext.disabled = true;
       NL.plan = numberLinePlan(state.target[0], state.target[1]);
-      NL.done = 0;
+      NL.done = 0; NL.awaiting = false; NL.typed = '';
       drawNumberLine();
       els.numlineCaption.textContent = state.target[0] + ' × ' + state.target[1] + ' means ' + NL.plan.jumps +
         ' jumps of ' + NL.plan.size + '. Start at 0 and tap Hop!';
-      els.numlineHop.disabled = false;
+      nlRenderEntry();
       els.numline.classList.remove('hidden');
     }
     function nlClose() {
-      clearInterval(NL.timer);
       els.numline.classList.add('hidden');
+      NL.awaiting = false;
       state.locked = false;
       els.keypad.classList.remove('locked');
       els.pauseBtn.disabled = false;
       refreshNavButtons();
     }
-    // "Show me": hops every jump except the last, then stops so the boys take the final one themselves.
-    function nlShow() {
-      if (NL.done) { drawNumberLine(); NL.done = 0; }
-      els.numlineShow.disabled = true;
-      clearInterval(NL.timer);
-      NL.timer = setInterval(function () {
-        if (NL.done >= NL.plan.jumps - 1) { clearInterval(NL.timer); els.numlineShow.disabled = false; return; }
-        nlHop();
-      }, 380);
-    }
+    function nlOpenNow() { return !els.numline.classList.contains('hidden'); }
 
     // ---------- start over (pause screen) ----------
     // Two taps (pick a level, then confirm) so the boys can't wipe the map by accident. The reset is written to the
@@ -839,16 +868,20 @@ if (typeof document !== 'undefined' && document.getElementById && document.getEl
       });
 
       document.addEventListener('keydown', function (e) {
-        if (e.key >= '0' && e.key <= '9') handleKey(e.key);
-        else if (e.key === 'Backspace' || e.key === 'Delete') handleKey('back');
-        else if (e.key === 'Enter') handleKey('go');
+        var route = nlOpenNow() ? nlKey : handleKey;
+        if (e.key >= '0' && e.key <= '9') route(e.key);
+        else if (e.key === 'Backspace' || e.key === 'Delete') route('back');
+        else if (e.key === 'Enter') route('go');
       });
 
       els.pauseBtn.addEventListener('click', openPause);
       els.resumeBtn.addEventListener('click', closePause);
       els.numlineBtn.addEventListener('click', nlOpen);
       els.numlineHop.addEventListener('click', nlHop);
-      els.numlineShow.addEventListener('click', nlShow);
+      els.numlineKeys.addEventListener('click', function (e) {
+        var k = e.target.closest('[data-nlkey]');
+        if (k) nlKey(k.getAttribute('data-nlkey'));
+      });
       els.numlineClose.addEventListener('click', nlClose);
       els.resetLevels.addEventListener('click', function (e) {
         var b = e.target.closest('[data-reset-level]');

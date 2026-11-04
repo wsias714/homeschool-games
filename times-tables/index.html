@@ -60,12 +60,18 @@
       <h3>📏 Number line</h3>
       <p id="numline-caption"></p>
       <svg id="numline-svg" role="img" aria-label="Number line from 0 to 100 showing the jumps"></svg>
+      <div id="numline-entry" class="hidden">Landed on: <span id="numline-typed"></span><span class="nl-cursor">_</span></div>
+      <div id="numline-keys" class="hidden">
+        <button class="key" data-nlkey="1">1</button><button class="key" data-nlkey="2">2</button><button class="key" data-nlkey="3">3</button>
+        <button class="key" data-nlkey="4">4</button><button class="key" data-nlkey="5">5</button><button class="key" data-nlkey="6">6</button>
+        <button class="key" data-nlkey="7">7</button><button class="key" data-nlkey="8">8</button><button class="key" data-nlkey="9">9</button>
+        <button class="key back" data-nlkey="back">⌫</button><button class="key" data-nlkey="0">0</button><button class="key go" data-nlkey="go">✓</button>
+      </div>
       <div id="numline-actions">
         <button id="numline-hop" class="key go">Hop ▶</button>
-        <button id="numline-show" class="key">Show me</button>
         <button id="numline-close" class="key back">Close</button>
       </div>
-      <p id="numline-note">Using help? That turn won’t count toward the flag — but it’s a great way to learn the fact.</p>
+      <p id="numline-note">Using help? That turn won’t count toward the flag, but it’s a great way to learn the fact.</p>
     </div>
   </div>
 

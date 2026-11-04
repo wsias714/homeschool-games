@@ -41,11 +41,12 @@ and answer list ignore the markers). If the server can't be reached, nothing cha
 ## Number line help
 
 The "📏 Number line" button (between Easier and Harder) opens a 0–100 number line for the current fact, read as
-*a jumps of b* (7 × 6 = 7 jumps of 6). **Hop** takes one jump at a time with running totals; **Show me** plays every
-jump but the last. The last landing is always a "?", so the answer still has to be typed. The line is the same
-0–100 scale for every fact so it never hints at the size of the answer. A turn that used the help is logged with
-`helped: true` and does not count toward mastering that fact (wrong answers still count); the tracker's heatmap
-follows the same rule.
+*a jumps of b* (7 × 6 = 7 jumps of 6). **Hop** takes one jump and the landing shows as "?": they type the number they
+landed on (the little keypad in the panel or the keyboard) and only a correct answer lets **Hop** work again. The
+last landing, which is the answer to the fact, is never filled in: they close the line and type it as usual. The line
+is the same 0–100 scale for every fact so it never hints at the size of the answer. A turn that used the help is
+logged with `helped: true` and does not count toward mastering that fact (wrong answers still count); the tracker's
+heatmap follows the same rule.
 
 ## Run
 

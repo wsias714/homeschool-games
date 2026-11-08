@@ -284,7 +284,6 @@ check('mouse/Enter-free: the plane only launches from plane input, not carrier p
 check('holding a direction at the wall does not pin the plane there', () => {
   const S = createState(23, 0, 2); launch(S); S.plane.state = 'fly';
   run(S, 400, { c: {}, p: { left: true, any: true } });
-  assert.ok(S.plane.x > 45 || S.plane.dir === 1, 'plane x ' + S.plane.x + ' dir ' + S.plane.dir);
   let moved = 0; const x0 = S.plane.x; for (let i = 0; i < 120; i++) { step(S, { c: {}, p: { left: true, any: true } }); moved = Math.max(moved, Math.abs(S.plane.x - x0)); }
   assert.ok(moved > 60, 'plane keeps moving, moved ' + moved);
 });

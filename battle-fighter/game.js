@@ -93,7 +93,7 @@ function createState(seed, round, level) {
     goals: { ships: 0, land: 0, bogies: 0 },
     stars: { c: 0, p: 0 },
     spawnT: 120, crateT: 480, banner: '', bannerT: 0, shake: 0, flashT: 0, events: [], fwT: 0,
-    power: { rapid: 0, triple: 0 }, lastKill: { c: -9999, p: -9999 }, combos: 0, bossSpawned: false,
+    power: { rapid: 0, triple: 0 }, floaters: [], lastKill: { c: -9999, p: -9999 }, combos: 0, bossSpawned: false,
   };
   const n = L.land.length;
   for (let i = 0; i < n; i++) {
@@ -144,7 +144,7 @@ function spawnShip(S, x, kind) {
   S.ships.push({
     kind, x: x || 150 + S.rng() * 400, y, dir: S.rng() < 0.5 ? -1 : 1,
     speed: kind === 'boss' ? 0.25 : 0.35 + S.rng() * 0.3, hp, maxhp: hp,
-    fireT: 200 + S.rng() * 200, warn: 0, flash: 0, sinking: 0,
+    fireT: 260 + S.rng() * 260, warn: 0, flash: 0, sinking: 0,
     scale: kind === 'boss' ? 1.2 : 0.6 + (y - 330) / 70 * 0.3, hue: (S.rng() * 3) | 0,
     under: kind === 'sub', subT: kind === 'sub' ? 120 + S.rng() * 120 : 0, fired: false,
   });
@@ -169,9 +169,15 @@ function groundTargets(S) {          // what missiles can hit: ships on the surf
   for (const l of S.land) if (!l.dead) out.push(l);
   return out;
 }
+function missileTouches(m, t) {     // ships: the whole hull counts, not just its middle; land targets: a circle
+  if (t.sinking === undefined) return dist(m.x, m.y, t.x, t.y) < 26;
+  const half = (t.kind === 'boss' ? 92 : t.kind === 'sub' ? 48 : 62) * t.scale;
+  return Math.abs(m.x - t.x) < half && m.y > t.y - 34 * t.scale && m.y < t.y + 14 * t.scale;
+}
 function isDown(t) { return t.sinking ? true : !!t.dead; }
 
 // a TEAM COMBO when both players score close together
+function floater(S, x, y, text, seat) { S.floaters.push({ x, y, text, seat, t: 0 }); }
 function scored(S, seat) {
   const other = seat === 'c' ? 'p' : 'c';
   S.lastKill[seat] = S.t;
@@ -179,6 +185,7 @@ function scored(S, seat) {
     S.stars.c++; S.stars.p++; S.combos++;
     S.lastKill.c = S.lastKill.p = -9999;
     banner(S, 'TEAM COMBO!', 100); say(S, 'combo');
+    floater(S, S.carrier.x, DECK_Y + S.carrier.dy - 100, '+1 ★', 'c'); if (S.plane.state === 'fly') floater(S, S.plane.x, S.plane.y - 30, '+1 ★', 'p');
   }
 }
 
@@ -188,19 +195,19 @@ function hitGround(S, t, dmg, seat) {
   t.hp -= dmg; t.flash = 10;
   if (t.hp > 0) { boom(S, t.x, t.y, 0.6); return; }
   if (t.sinking !== undefined) {           // a ship, sub or the boss
-    t.sinking = 1; S.goals.ships++; S.stars[seat]++;
+    t.sinking = 1; S.goals.ships++; S.stars[seat]++; floater(S, t.x, t.y - 30, t.kind === 'boss' ? '+3 ★' : '+1 ★', seat);
     if (t.kind === 'boss') { boom(S, t.x, t.y, 2.6); banner(S, 'BOSS SUNK!', 120); S.stars[seat] += 2; }
     else { boom(S, t.x, t.y, 1.6); banner(S, t.kind === 'sub' ? 'SUB SUNK!' : 'SHIP SUNK!', 90); }
     say(S, 'cheer');
   } else {                                 // a land target
-    t.dead = true; S.goals.land++; S.stars[seat]++; boom(S, t.x, t.y - 6, 1.8); banner(S, 'TARGET DESTROYED!', 90); say(S, 'cheer');
+    t.dead = true; S.goals.land++; S.stars[seat]++; floater(S, t.x, t.y - 40, '+1 ★', seat); boom(S, t.x, t.y - 6, 1.8); banner(S, 'TARGET DESTROYED!', 90); say(S, 'cheer');
   }
   scored(S, seat);
 }
 
 function killBogie(S, b, seat) {
   if (b.dying || b.dead) return;
-  S.goals.bogies++; S.stars[seat]++;
+  S.goals.bogies++; S.stars[seat]++; floater(S, b.x, b.y - 20, '+1 ★', seat);
   banner(S, 'BOGEY DOWN!', 80); say(S, 'cheer');
   if (S.rng() < 0.5) {                      // some explode...
     b.dead = true; boom(S, b.x, b.y, 1.5);
@@ -230,9 +237,13 @@ function hurtPlane(S, x, y) {
 }
 
 // ───────────────────────────── weapons ─────────────────────────────
+function muzzle(c) {               // tip of the launcher barrel: pivot at (72, -6) on the deck, barrel 50 long
+  const e = c.elev * DEG;
+  return [c.x + c.dir * (72 + Math.cos(e) * 50), DECK_Y + c.dy - 6 - Math.sin(e) * 50];
+}
 function fireCarrier(S) {
   const c = S.carrier, dir = c.dir, dk = DECK_Y + c.dy;
-  const mx = c.x + dir * 72, my = dk - 22;
+  const [mx, my] = muzzle(c);
   c.recoil = 10; c.flash = 6;
   if (c.elev >= TUNE.FLAK_ELEV) {                       // anti-aircraft: a fan of three flak shells
     for (const off of [-10, 0, 10]) {
@@ -269,6 +280,8 @@ function step(S, inp) {
   updateParticles(S);
   for (const sp of S.splashes) sp.t++;
   S.splashes = S.splashes.filter(sp => sp.t < 40);
+  for (const f of S.floaters) f.t++;
+  S.floaters = S.floaters.filter(f => f.t < 60);
   for (const r of S.rings) r.t++;
   S.rings = S.rings.filter(r => r.t < 22);
 
@@ -280,14 +293,11 @@ function step(S, inp) {
   if (c.flash > 0) c.flash--;
   if (S.power.rapid > 0) S.power.rapid--;
 
-  if (S.rally > 0) {                                    // hull gone: no-punishment reset
-    S.rally--;
+  if (S.rally > 0) {                                    // hull gone: no-punishment reset. Only the carrier pauses;
+    S.rally--;                                          // the fighter keeps flying and nothing can hurt the carrier
     if (S.t % 8 === 0) boom(S, c.x + (S.rng() - 0.5) * 160, DECK_Y + c.dy - 4, 0.6);
     if (S.rally === 0) rallyReset(S);
-    return;
-  }
-
-  carrierStep(S, inp.c || {});
+  } else carrierStep(S, inp.c || {});
   planeStep(S, inp.p || {});
   shipsStep(S);
   landStep(S);
@@ -311,7 +321,9 @@ function landingCheck(S) {
 }
 function touchdown(S) {
   const p = S.plane, c = S.carrier;
-  p.state = 'landed'; p.x = c.x - c.dir * 10; p.y = DECK_Y + c.dy - 14; p.dir = c.dir; p.vx = 0; p.vy = 0; p.rot = 0;
+  p.state = 'landed'; p.x = c.x + c.dir * 14; p.y = DECK_Y + c.dy - 14; p.dir = c.dir; p.vx = 0; p.vy = 0; p.rot = 0;
+  S.missiles.length = 0; S.bullets.length = 0; S.flak.length = 0; S.enemyShots.length = 0; S.bombs.length = 0;
+  S.bogies = S.bogies.filter(b => !b.dying);
   S.phase = 'win'; S.phaseT = 0; S.fwT = 0;
   banner(S, S.level === LEVELS.length - 1 ? 'WORLD SAVED!' : 'MISSION COMPLETE!', 99999);
   say(S, 'dock'); say(S, 'win');
@@ -363,7 +375,7 @@ function planeStep(S, k) {
   if (p.mcool > 0) p.mcool--;
 
   if (p.state === 'deck') {
-    p.x = c.x - c.dir * 10; p.y = dk - 14; p.dir = c.dir; p.vx = 0; p.vy = 0; p.rot = 0;
+    p.x = c.x + c.dir * 14; p.y = dk - 14; p.dir = c.dir; p.vx = 0; p.vy = 0; p.rot = 0;
     p.stateT--;
     if (rising || p.stateT <= 0) {            // takeoff needs a fresh key press, not a held key; colour alternates every launch
       p.state = 'fly'; S.launches++; p.colorIdx = (S.launches + S.round) % 2; p.vx = p.dir * TUNE.PLANE_CRUISE; p.vy = -2.4;
@@ -390,8 +402,8 @@ function planeStep(S, k) {
   const ty = (k.up ? -TUNE.PLANE_CLIMB : 0) + (k.down ? TUNE.PLANE_CLIMB : 0);
   p.vy += (ty - p.vy) * 0.12;
   p.x += p.vx; p.y += p.vy;
-  if (p.x < 40) { p.x = 40; p.dir = 1; p.bounce = 50; }
-  if (p.x > W - 40) { p.x = W - 40; p.dir = -1; p.bounce = 50; }
+  if (p.x < 40) { p.x = 40; p.dir = 1; p.bounce = 28; }
+  if (p.x > W - 40) { p.x = W - 40; p.dir = -1; p.bounce = 28; }
   p.y = clamp(p.y, TOP_SAFE, dk - 30);
   p.rot = p.vy * 0.06 * p.dir;
   if (S.t % 2 === 0) { p.trail.push({ x: p.x - p.dir * 28, y: p.y }); if (p.trail.length > 26) p.trail.shift(); }
@@ -453,7 +465,7 @@ function shipsStep(S) {
     if (s.x < 90) s.dir = 1;
     if (s.x > 600) s.dir = -1;
     if (s.kind === 'sub') { subStep(S, s); continue; }
-    if (--s.fireT <= 0) { s.warn = s.kind === 'boss' ? 50 : 36; s.fireT = (s.kind === 'boss' ? 200 : 260) + S.rng() * 200; }
+    if (--s.fireT <= 0) { s.warn = s.kind === 'boss' ? 50 : 36; s.fireT = (s.kind === 'boss' ? 300 : 400) + S.rng() * 280; }
     if (s.warn > 0 && --s.warn === 0) {
       const offs = s.kind === 'boss' ? [-70, 0, 70] : [(S.rng() - 0.5) * 60];
       for (const o of offs) lobShell(S, s, c.x + o);
@@ -550,7 +562,7 @@ function projectilesStep(S) {
     m.x += Math.cos(m.ang) * 5.4; m.y += Math.sin(m.ang) * 5.4;
     puff(S, m.x - Math.cos(m.ang) * 8, m.y - Math.sin(m.ang) * 8, { life: 24, max: 24, size: 4, grow: 0.15, color: '#d8dde8', kind: 'smoke' });
     for (const t of gts) {
-      if (!isDown(t) && dist(m.x, m.y, t.x, t.y) < (t.kind === 'boss' ? 40 : 26)) { hitGround(S, t, TUNE.MISSILE_DMG, m.owner); m.life = 0; break; }
+      if (!isDown(t) && missileTouches(m, t)) { hitGround(S, t, TUNE.MISSILE_DMG, m.owner); m.life = 0; break; }
     }
   }
   S.missiles = S.missiles.filter(m => m.life > 0 && m.x > -40 && m.x < W + 40 && m.y > -40 && m.y < H);
@@ -598,7 +610,7 @@ function cratesStep(S) {
   S.crates = S.crates.filter(cr => !cr.gone);
 }
 function collectCrate(S, cr, seat) {
-  cr.gone = true; S.stars[seat]++;
+  cr.gone = true; S.stars[seat]++; floater(S, cr.x, cr.y - 30, '+1 ★', seat);
   if (cr.kind === 'repair') {
     S.carrier.hull = Math.min(TUNE.HULL, S.carrier.hull + 2);
     if (S.plane.state === 'fly') S.plane.hp = TUNE.PLANE_HP;
@@ -679,21 +691,23 @@ root.BattleFighter = API;
 // ───────────────────────────── browser: input ─────────────────────────────
 if (typeof document === 'undefined' || !document.getElementById('gc')) return;
 
-const keys = {};
+const keys = {}, tapped = {};
 let presses = 0;
 let mode = 'map';                 // 'map' (pick a mission) or 'game'
-const P1_FIRE = new Set(['Space', 'KeyZ', 'KeyX', 'KeyC', 'KeyV', 'KeyB', 'KeyN', 'KeyM', 'Comma', 'Period']);
+const P1_FIRE = new Set(['Space', 'KeyZ', 'KeyX', 'KeyC', 'KeyV', 'KeyB', 'KeyN']);   // left of the fighter's keys only
 const GAME_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter',
-  'KeyZ', 'KeyX', 'KeyC', 'KeyV', 'KeyB', 'KeyN', 'KeyM', 'Comma', 'Period', 'KeyQ', 'KeyE', 'ShiftRight', 'Slash']);
+  'KeyZ', 'KeyX', 'KeyC', 'KeyV', 'KeyB', 'KeyN', 'KeyQ', 'KeyE', 'ShiftRight', 'Slash']);
+const typing = e => !!(e.target && e.target.closest && e.target.closest('input,textarea,select,[contenteditable]'));
 addEventListener('keydown', e => {
+  if (typing(e)) return;
   if (GAME_KEYS.has(e.code)) e.preventDefault();
   ensureAudio();
   if (mode === 'map') { if (!e.repeat) mapKey(e.code); return; }
   if (!e.repeat && P1_FIRE.has(e.code)) presses++;       // each fresh press counts toward the launch
-  keys[e.code] = true;
+  keys[e.code] = true; tapped[e.code] = true;
   if (!e.repeat && e.code === 'KeyR' && S.phase === 'win') toMap(true);
 });
-addEventListener('keyup', e => { keys[e.code] = false; });
+addEventListener('keyup', e => { if (!typing(e)) keys[e.code] = false; });
 addEventListener('blur', () => { for (const k in keys) keys[k] = false; presses = 0; });
 addEventListener('mousedown', e => {
   if (e.target.id !== 'gc') return;
@@ -703,9 +717,12 @@ addEventListener('mousedown', e => {
 
 function readInput() {
   const pr = presses; presses = 0;
-  const pk = { left: keys.ArrowLeft, right: keys.ArrowRight, up: keys.ArrowUp, down: keys.ArrowDown, fire: keys.Enter, missile: keys.ShiftRight || keys.Slash };
-  pk.any = !!(pk.left || pk.right || pk.up || pk.down || pk.fire);
-  return { c: { left: keys.KeyA, right: keys.KeyD, up: keys.KeyW, down: keys.KeyS, depthUp: keys.KeyQ, depthDown: keys.KeyE, presses: pr }, p: pk };
+  const k = c => !!(keys[c] || tapped[c]);              // a key pressed and released between two steps still counts once
+  const pk = { left: k('ArrowLeft'), right: k('ArrowRight'), up: k('ArrowUp'), down: k('ArrowDown'), fire: k('Enter'), missile: k('ShiftRight') || k('Slash') };
+  pk.any = pk.left || pk.right || pk.up || pk.down || pk.fire;
+  const out = { c: { left: k('KeyA'), right: k('KeyD'), up: k('KeyW'), down: k('KeyS'), depthUp: k('KeyQ'), depthDown: k('KeyE'), presses: pr }, p: pk };
+  for (const c in tapped) delete tapped[c];
+  return out;
 }
 
 // ───────────────────────────── browser: sound ─────────────────────────────
@@ -1099,6 +1116,10 @@ function drawSub(s, t) {
   if (!s.sinking && !s.under && s.hp < s.maxhp) pips(s.x, s.y - 40 * s.scale, s.hp, s.maxhp, '#ff5a4a');
 }
 
+function aimLocked(S) {             // would a missile fired now start inside a target's steering cone?
+  const c = S.carrier, [mx, my] = muzzle(c), e = c.elev * DEG, ang = c.dir > 0 ? -e : Math.PI + e;
+  return groundTargets(S).some(t => Math.abs(angDiff(Math.atan2(t.y - my, t.x - mx), ang)) < TUNE.CONE_DEG * DEG);
+}
 function drawCarrier(S, t) {
   const c = S.carrier;
   ctx.save(); ctx.translate(c.x, DECK_Y + c.dy);
@@ -1139,11 +1160,14 @@ function drawCarrier(S, t) {
     ctx.fillStyle = '#e14a3a'; ctx.fillRect(10, -4, 6, 8);
   }
   if (c.flash > 0) { ctx.fillStyle = 'rgba(255,230,120,.9)'; ctx.beginPath(); ctx.arc(50, 0, 12, 0, 6.3); ctx.fill(); }
-  ctx.strokeStyle = flak ? 'rgba(255,226,120,.6)' : 'rgba(255,255,255,.6)'; ctx.lineWidth = 2; ctx.setLineDash([3, 7]);
-  ctx.beginPath(); ctx.moveTo(56, 0); ctx.lineTo(flak ? 120 : 150, 0); ctx.stroke(); ctx.setLineDash([]);   // short aim guide
+  const locked = !flak && aimLocked(S);
+  ctx.strokeStyle = flak ? 'rgba(255,226,120,.6)' : locked ? 'rgba(120,255,150,.95)' : 'rgba(255,255,255,.6)';
+  ctx.lineWidth = locked ? 3 : 2; ctx.setLineDash([3, 7]);
+  ctx.beginPath(); ctx.moveTo(56, 0); ctx.lineTo(flak ? 120 : 260, 0); ctx.stroke(); ctx.setLineDash([]);   // aim guide: green = on target
   ctx.restore();
   if (c.hit > 0 && c.hit % 4 < 2) { ctx.fillStyle = 'rgba(255,80,60,.45)'; ctx.fillRect(-124, -8, 266, 62); }
   ctx.restore();
+  if (S.phase !== 'play') return;
   // charge ring above the launcher
   const mx = c.x + c.dir * 72, my = DECK_Y + c.dy - 28;
   ctx.lineWidth = 6; ctx.strokeStyle = 'rgba(0,0,0,.4)'; ctx.beginPath(); ctx.arc(mx, my - 46, 17, 0, 6.3); ctx.stroke();
@@ -1318,7 +1342,7 @@ function drawHUD(S) {
   ctx.font = 'bold 10px Arial'; ctx.fillStyle = '#cfd8ee'; ctx.fillText('CARRIER  WASD • Q/E • mash SPACE', 12, 36);
   pipRow(12, 42, S.carrier.hull, TUNE.HULL, '#ffb36b', 'left');
   ctx.textAlign = 'right'; ctx.font = 'bold 16px "Arial Rounded MT Bold",Arial';
-  const pc = PLANE_COLORS[S.plane.colorIdx];
+  const pc = PLANE_COLORS[S.plane.state === 'deck' ? (S.launches + 1 + S.round) % 2 : S.plane.colorIdx];
   ctx.fillStyle = pc; ctx.fillText(nm.p.toUpperCase() + '  ★ ' + S.stars.p + ' ✈', W - 12, 22);
   ctx.font = 'bold 10px Arial'; ctx.fillStyle = '#cfd8ee'; ctx.fillText('FIGHTER  ARROWS • ENTER • R-SHIFT', W - 12, 36);
   pipRow(W - 25, 42, S.plane.hp, TUNE.PLANE_HP, pc, 'right');
@@ -1409,7 +1433,6 @@ function drawSoldier(m) {
   ctx.restore();
 }
 function drawSkirmish(t) {
-  skirmishStep();
   for (const b of SK.boats) {
     const bob = Math.sin(t * 0.05 + b.x) * 1.2;
     ctx.fillStyle = '#5b6470'; ctx.beginPath(); ctx.moveTo(b.x - 16, b.y + bob - 3); ctx.lineTo(b.x + 16, b.y + bob - 3); ctx.lineTo(b.x + 12, b.y + bob + 3); ctx.lineTo(b.x - 13, b.y + bob + 3); ctx.fill();
@@ -1442,7 +1465,7 @@ function draw(S) {
   drawBackground(S);
   drawIsland(S);
   drawSkirmish(t);
-  for (const s of S.ships) drawShip(s, t);
+  for (const s of S.ships.slice().sort((a, b) => a.y - b.y)) drawShip(s, t);
   drawCarrier(S, t);
   const p = S.plane;
   if (p.state === 'landed') drawPlane(p.x, p.y, p.dir, 0, PLANE_COLORS[p.colorIdx], 1, t, false);
@@ -1462,6 +1485,11 @@ function draw(S) {
   drawProjectiles(S);
   drawParticles(S);
   drawWeather(S);
+  for (const f of S.floaters) {
+    ctx.globalAlpha = Math.min(1, (60 - f.t) / 20); ctx.font = 'bold 20px "Arial Rounded MT Bold",Arial'; ctx.textAlign = 'center';
+    outlined(f.text, f.x, f.y - f.t * 0.8, f.seat === 'c' ? '#ffb36b' : PLANE_COLORS[S.plane.colorIdx], '#10101a', 4);
+  }
+  ctx.globalAlpha = 1;
   if (S.phase === 'landing') drawLandingGuide(S);
   ctx.restore();
   ctx.fillStyle = g.vig; ctx.fillRect(0, 0, W, H);
@@ -1624,16 +1652,17 @@ function drawMap() {
 }
 
 // ───────────────────────────── browser: loop ─────────────────────────────
-function clearInput() { for (const k in keys) keys[k] = false; presses = 0; }
+function clearInput() { for (const k in keys) keys[k] = false; for (const k in tapped) delete tapped[k]; presses = 0; }
 function playEvents() {
   const seen = {};
   for (const e of S.events) { if (!seen[e] && SFX[e]) { seen[e] = 1; SFX[e](); } }
   S.events.length = 0;
 }
+let armed = 0;
 const rb = document.getElementById('brestart'), mb = document.getElementById('bmute'), mapb = document.getElementById('bmap');
 function syncButtons() {
   if (!rb) return;
-  const label = mode === 'map' ? 'START ▶' : S.phase === 'win' ? (S.level === LEVELS.length - 1 ? 'WORLD MAP 🌍' : 'NEXT MISSION 🌍') : 'RESTART ↻';
+  const label = mode === 'map' ? 'START ▶' : (S.phase !== 'win' && performance.now() - armed < 2000) ? 'TAP AGAIN ↻' : S.phase === 'win' ? (S.level === LEVELS.length - 1 ? 'WORLD MAP 🌍' : 'NEXT MISSION 🌍') : 'RESTART ↻';
   if (rb.textContent !== label) rb.textContent = label;
 }
 let acc = 0, last = performance.now();
@@ -1641,7 +1670,7 @@ function frame(now) {
   acc += Math.min(100, now - last); last = now;
   if (mode === 'map') { acc = 0; drawMap(); }
   else {
-    while (acc >= 1000 / 60) { step(S, readInput()); playEvents(); acc -= 1000 / 60; }
+    while (acc >= 1000 / 60) { step(S, readInput()); skirmishStep(); playEvents(); acc -= 1000 / 60; }
     draw(S);
   }
   syncButtons();
@@ -1652,7 +1681,8 @@ if (rb) rb.onclick = () => {
   ensureAudio();
   if (mode === 'map') startLevel(mapSel);
   else if (S.phase === 'win') toMap(true);
-  else startLevel(S.level);
+  else if (performance.now() - armed < 2000) { armed = 0; startLevel(S.level); }
+  else armed = performance.now();                    // first tap only arms it, so a bump doesn't wipe the mission
   rb.blur();
 };
 if (mapb) mapb.onclick = () => { if (mode === 'game') toMap(S.phase === 'win'); mapb.blur(); };

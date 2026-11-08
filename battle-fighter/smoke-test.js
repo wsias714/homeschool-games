@@ -298,6 +298,15 @@ check('a key already held does not auto-launch the plane (needs a fresh press)',
   assert.strictEqual(S.plane.state, 'fly');
 });
 
+check('Enter fires a heat-seeking air-to-air missile that steers onto an off-axis bogey', () => {
+  const S = createState(41); launch(S); S.bogies.length = 0; S.spawnT = 99999;
+  S.plane.x = 300; S.plane.y = 200; S.plane.dir = 1; S.plane.vy = 0; S.plane.hit = 0;
+  S.bogies.push({ kind: 'jet', x: 520, y: 290, vx: 0, hp: 1, bob: 0, base: 290, fireT: 9999, bombT: 0, dying: null, rot: 0, vy: 0, flash: 0, dead: false });
+  step(S, { c: {}, p: { fire: true } });
+  S.plane.vx = 0; run(S, 80);
+  assert.strictEqual(S.goals.bogies, 1, 'missile found it');
+});
+
 check('ships never leave the sailing lane and carrier stays in range', () => {
   const S = createState(14); run(S, 3000);
   for (const s of S.ships) assert.ok(s.x > 60 && s.x < 640);

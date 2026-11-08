@@ -22,7 +22,8 @@ const TUNE = {
   MISSILE_DMG: 2, SHIP_HP: 4, LAND_HP: 3,
   CARRIER_SPEED: 2.2, CARRIER_MIN: 130, CARRIER_MAX: 560,
   PLANE_CRUISE: 3.4, PLANE_BOOST: 5.4, PLANE_CLIMB: 3.6,
-  GUN_COOLDOWN: 7, BULLET_SPEED: 10,
+  GUN_COOLDOWN: 16, BULLET_SPEED: 8.5,            // Enter: heat-seeking air-to-air missile (unlimited)
+  AAM_CONE_DEG: 55, AAM_TURN: 0.14,
   PLANE_INVULN: 70, DOCK_COOLDOWN: 90,
   RALLY_FRAMES: 150, DOWN_FRAMES: 150,
   MAX_BOGIES: 3, MAX_SHIPS: 3,
@@ -326,7 +327,8 @@ function planeStep(S, k) {
 
   if (k.fire && p.cool <= 0) {
     p.cool = TUNE.GUN_COOLDOWN;
-    S.bullets.push({ x: p.x + p.dir * 34, y: p.y, vx: p.dir * TUNE.BULLET_SPEED + p.vx * 0.3, vy: 0, life: 70 });
+    const a0 = p.dir > 0 ? 0 : Math.PI;
+    S.bullets.push({ x: p.x + p.dir * 34, y: p.y, ang: a0, vx: Math.cos(a0) * TUNE.BULLET_SPEED, vy: 0, life: 100, home: true });
     say(S, 'gun');
   }
   if (k.missile && p.mcool <= 0 && p.ammo > 0) {      // air-to-surface missile: points down the way the plane faces
@@ -411,6 +413,19 @@ function projectilesStep(S) {
   const p = S.plane;
   // plane bullets: bogies only
   for (const b of S.bullets) {
+    if (b.home) {                                       // heat-seeking: steers toward the best bogey inside its wide cone
+      let best = null, bd = 99;
+      for (const g of S.bogies) {
+        if (g.dying || g.dead) continue;
+        let d = Math.atan2(g.y - b.y, g.x - b.x) - b.ang;
+        while (d > Math.PI) d -= 2 * Math.PI;
+        while (d < -Math.PI) d += 2 * Math.PI;
+        if (Math.abs(d) < TUNE.AAM_CONE_DEG * DEG && Math.abs(d) < bd) { bd = Math.abs(d); best = d; }
+      }
+      if (best !== null) b.ang += clamp(best, -TUNE.AAM_TURN, TUNE.AAM_TURN);
+      b.vx = Math.cos(b.ang) * TUNE.BULLET_SPEED; b.vy = Math.sin(b.ang) * TUNE.BULLET_SPEED;
+      if (S.t % 2 === 0) puff(S, b.x - b.vx, b.y - b.vy, { life: 16, max: 16, size: 3, grow: 0.1, color: '#d8dde8', kind: 'smoke' });
+    }
     b.x += b.vx; b.y += b.vy; b.life--;
     for (const g of S.bogies) {
       if (!g.dying && !g.dead && b.life > 0 && dist(b.x, b.y, g.x, g.y) < (g.kind === 'bomber' ? 30 : 22)) { b.life = 0; hitBogie(S, g, 1, 'p'); }
@@ -825,7 +840,14 @@ function drawParticles(S) {
 }
 
 function drawProjectiles(S) {
-  for (const b of S.bullets) { ctx.fillStyle = '#fff6a8'; ctx.fillRect(b.x - 8, b.y - 1.5, 16, 3); ctx.fillStyle = '#ffb02e'; ctx.fillRect(b.x - 3, b.y - 1.5, 6, 3); }
+  for (const b of S.bullets) {
+    if (b.home) {
+      ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(b.ang);
+      ctx.fillStyle = 'rgba(255,170,40,.9)'; ctx.beginPath(); ctx.moveTo(-6, -2); ctx.lineTo(-13 - Math.random() * 4, 0); ctx.lineTo(-6, 2); ctx.fill();
+      ctx.fillStyle = '#eef2f6'; ctx.fillRect(-6, -2, 13, 4); ctx.fillStyle = '#ff5a3a'; ctx.beginPath(); ctx.moveTo(7, -2); ctx.lineTo(12, 0); ctx.lineTo(7, 2); ctx.fill();
+      ctx.restore(); continue;
+    }
+    ctx.fillStyle = '#fff6a8'; ctx.fillRect(b.x - 8, b.y - 1.5, 16, 3); ctx.fillStyle = '#ffb02e'; ctx.fillRect(b.x - 3, b.y - 1.5, 6, 3); }
   for (const f of S.flak) { ctx.fillStyle = '#ffe48a'; ctx.beginPath(); ctx.arc(f.x, f.y, 5, 0, 6.3); ctx.fill(); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(f.x, f.y, 2, 0, 6.3); ctx.fill(); }
   for (const m of S.missiles) {
     ctx.save(); ctx.translate(m.x, m.y); ctx.rotate(m.ang);

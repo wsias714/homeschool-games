@@ -18,7 +18,7 @@ const TUNE = {
   PRESSES_TO_FIRE: 3,         // mash this many times to launch
   CHARGE_HOLD: 45,            // frames before the charge starts to leak
   CHARGE_LEAK: 0.006,
-  FLAK_ELEV: 48,              // launcher aimed at/above this = anti-aircraft, below = missile
+  FLAK_ELEV: 60,              // launcher aimed at/above this = anti-aircraft, below = missile
   MISSILE_DMG: 2, SHIP_HP: 4, LAND_HP: 3,
   CARRIER_SPEED: 2.2, CARRIER_MIN: 130, CARRIER_MAX: 560,
   PLANE_CRUISE: 3.4, PLANE_BOOST: 5.4, PLANE_CLIMB: 3.6,
@@ -26,6 +26,11 @@ const TUNE = {
   PLANE_INVULN: 70, DOCK_COOLDOWN: 90,
   RALLY_FRAMES: 150, DOWN_FRAMES: 150,
   MAX_BOGIES: 3, MAX_SHIPS: 3,
+  PLANE_MISSILES: 4, PLANE_MISSILE_COOLDOWN: 40,   // air-to-surface missiles; refilled by a pass over the carrier
+  CONE_DEG: 16, PLANE_CONE_DEG: 30,                // a missile only homes if it is already pointed within this cone of a target
+  HOMING: 0.045,
+  DEPTH_RANGE: 28, DEPTH_SPEED: 0.9,               // the carrier can slide up/down the screen a little
+  LANDING_ASSIST: 900,                             // frames of 'land on the carrier' before the autopilot helps
 };
 const PLANE_COLORS = ['#3a7bff', '#ff3b3b'];   // alternates blue / red on every launch
 
@@ -47,9 +52,9 @@ function createState(seed, round) {
   const S = {
     rng: mulberry32((seed || 1) + round * 7919),
     t: 0, round, phase: 'play', phaseT: 0, rally: 0, launches: 0,
-    carrier: { x: 300, dir: 1, elev: 24, charge: 0, idle: 0, hull: TUNE.HULL, hit: 0, w: 220, recoil: 0, flash: 0 },
+    carrier: { x: 300, dir: 1, elev: 24, charge: 0, idle: 0, hull: TUNE.HULL, hit: 0, w: 220, recoil: 0, flash: 0, dy: 0 },
     plane: { state: 'deck', stateT: 90, x: 300, y: DECK_Y - 14, vx: 0, vy: 0, dir: 1, hp: TUNE.PLANE_HP, hit: 0,
-             colorIdx: (round + 1) % 2, rot: 0, cool: 0, dockCd: 0, trail: [], dockFlash: 0, anyPrev: true, bounce: 0 },
+             colorIdx: (round + 1) % 2, rot: 0, cool: 0, dockCd: 0, trail: [], dockFlash: 0, anyPrev: true, bounce: 0, ammo: TUNE.PLANE_MISSILES, mcool: 0 },
     bogies: [], ships: [], land: [],
     missiles: [], flak: [], bullets: [], enemyShots: [], bombs: [],
     parts: [], splashes: [],
@@ -121,25 +126,14 @@ function groundTargets(S) {
   for (const l of S.land) if (!l.dead) out.push(l);
   return out;
 }
-function pickTarget(S, fromX, dir) {
-  let best = null, bd = 1e9;
-  for (const pass of [true, false]) {
-    for (const t of groundTargets(S)) {
-      if (pass && (t.x - fromX) * dir <= 0) continue;
-      const d = Math.abs(t.x - fromX);
-      if (d < bd) { bd = d; best = t; }
-    }
-    if (best) return best;
-  }
-  return null;
-}
-function hitGround(S, t, dmg) {
+function hitGround(S, t, dmg, seat) {
+  seat = seat || 'c';
   t.hp -= dmg; t.flash = 10;
   if (t.hp > 0) { boom(S, t.x, t.y, 0.6); return; }
   if (t.sinking !== undefined) {           // a ship
-    if (!t.sinking) { t.sinking = 1; S.goals.ships++; S.stars.c++; boom(S, t.x, t.y, 1.6); banner(S, 'SHIP SUNK!', 90); say(S, 'cheer'); }
+    if (!t.sinking) { t.sinking = 1; S.goals.ships++; S.stars[seat]++; boom(S, t.x, t.y, 1.6); banner(S, 'SHIP SUNK!', 90); say(S, 'cheer'); }
   } else if (!t.dead) {                    // a land target
-    t.dead = true; S.goals.land++; S.stars.c++; boom(S, t.x, t.y - 6, 1.8); banner(S, 'TARGET DESTROYED!', 90); say(S, 'cheer');
+    t.dead = true; S.goals.land++; S.stars[seat]++; boom(S, t.x, t.y - 6, 1.8); banner(S, 'TARGET DESTROYED!', 90); say(S, 'cheer');
   }
 }
 
@@ -175,8 +169,8 @@ function hurtPlane(S, x, y) {
 
 // ───────────────────────────── carrier weapons ─────────────────────────────
 function fireCarrier(S) {
-  const c = S.carrier, dir = c.dir;
-  const mx = c.x + dir * 72, my = DECK_Y - 22;
+  const c = S.carrier, dir = c.dir, dk = DECK_Y + c.dy;
+  const mx = c.x + dir * 72, my = dk - 22;
   c.recoil = 10; c.flash = 6;
   if (c.elev >= TUNE.FLAK_ELEV) {                       // anti-aircraft: a fan of three flak shells
     for (const off of [-10, 0, 10]) {
@@ -184,11 +178,9 @@ function fireCarrier(S) {
       S.flak.push({ x: mx, y: my, vx: dir * Math.cos(a) * 7.5, vy: -Math.sin(a) * 7.5, life: 62 });
     }
     say(S, 'flak');
-  } else {                                              // surface-to-surface missile, gently homing
-    const rad = c.elev * DEG;
-    const ang = dir > 0 ? -rad : Math.PI + rad;
-    const tgt = pickTarget(S, c.x, dir);
-    S.missiles.push({ x: mx, y: my, ang, tgt, life: 300 });
+  } else {                                              // surface-to-surface missile: it flies where the launcher points
+    const rad = c.elev * DEG;                           // and only steers itself if it is already close to a target
+    S.missiles.push({ x: mx, y: my, ang: dir > 0 ? -rad : Math.PI + rad, owner: 'c', cone: TUNE.CONE_DEG * DEG, life: 300 });
     say(S, 'missile');
   }
   for (let i = 0; i < 6; i++) puff(S, mx, my, { vx: dir * (1 + S.rng() * 2), vy: -S.rng() * 1.5, life: 26, max: 26, size: 5, grow: 0.25, color: '#cfd5e0', kind: 'smoke' });
@@ -222,7 +214,7 @@ function step(S, inp) {
 
   if (S.rally > 0) {                                    // hull gone: no-punishment reset
     S.rally--;
-    if (S.t % 8 === 0) boom(S, c.x + (S.rng() - 0.5) * 160, DECK_Y - 4, 0.6);
+    if (S.t % 8 === 0) boom(S, c.x + (S.rng() - 0.5) * 160, DECK_Y + c.dy - 4, 0.6);
     if (S.rally === 0) rallyReset(S);
     return;
   }
@@ -236,9 +228,27 @@ function step(S, inp) {
   spawnStep(S);
 
   const g = S.goals, G = TUNE.GOALS;
-  if (g.ships >= G.ships && g.land >= G.land && g.bogies >= G.bogies) {
-    S.phase = 'win'; S.phaseT = 0; S.fwT = 0; banner(S, 'YOU WIN!', 99999); say(S, 'win');
+  if (S.phase === 'play' && g.ships >= G.ships && g.land >= G.land && g.bogies >= G.bogies) {
+    S.phase = 'landing'; S.phaseT = 0; banner(S, 'ALL CLEAR!', 150); say(S, 'cheer');   // now the plane has to land on the carrier
   }
+  if (S.phase === 'landing') { S.phaseT++; landingCheck(S); }
+}
+
+function landingCheck(S) {
+  const p = S.plane, c = S.carrier, dk = DECK_Y + c.dy;
+  const over = Math.abs(p.x - c.x) < c.w / 2 - 10;
+  if (p.state === 'deck' || (p.state === 'fly' && over && p.y >= dk - 52)) touchdown(S);
+}
+function touchdown(S) {
+  const p = S.plane, c = S.carrier;
+  p.state = 'landed'; p.x = c.x - c.dir * 10; p.y = DECK_Y + c.dy - 14; p.dir = c.dir; p.vx = 0; p.vy = 0; p.rot = 0;
+  S.phase = 'win'; S.phaseT = 0; S.fwT = 0; banner(S, 'YOU WIN!', 99999); say(S, 'dock'); say(S, 'win');
+}
+// the autopilot that helps a stuck 'land on the carrier' after a while
+function autoLand(S) {
+  const p = S.plane, c = S.carrier, dk = DECK_Y + c.dy, dx = c.x - p.x, ty = dk - 44;
+  const near = Math.abs(dx) < 170;
+  return { left: dx < -25, right: dx > 25, down: near && p.y < ty - 6, up: near && p.y > ty + 6 };
 }
 
 function rallyReset(S) {
@@ -255,6 +265,9 @@ function carrierStep(S, k) {
   if (k.left) { c.x -= TUNE.CARRIER_SPEED; c.dir = -1; }
   if (k.right) { c.x += TUNE.CARRIER_SPEED; c.dir = 1; }
   c.x = clamp(c.x, TUNE.CARRIER_MIN, TUNE.CARRIER_MAX);
+  if (k.depthUp) c.dy -= TUNE.DEPTH_SPEED;
+  if (k.depthDown) c.dy += TUNE.DEPTH_SPEED;
+  c.dy = clamp(c.dy, -TUNE.DEPTH_RANGE, TUNE.DEPTH_RANGE);
   if (k.up) c.elev += 1.2;
   if (k.down) c.elev -= 1.2;
   c.elev = clamp(c.elev, 8, 86);
@@ -268,15 +281,17 @@ function carrierStep(S, k) {
 }
 
 function planeStep(S, k) {
-  const p = S.plane, c = S.carrier;
+  const p = S.plane, c = S.carrier, dk = DECK_Y + c.dy;
+  if (S.phase === 'landing' && S.phaseT > TUNE.LANDING_ASSIST && p.state === 'fly') k = autoLand(S);
   const rising = !!k.any && !p.anyPrev; p.anyPrev = !!k.any;
   if (p.hit > 0) p.hit--;
   if (p.dockCd > 0) p.dockCd--;
   if (p.dockFlash > 0) p.dockFlash--;
   if (p.cool > 0) p.cool--;
+  if (p.mcool > 0) p.mcool--;
 
   if (p.state === 'deck') {
-    p.x = c.x - c.dir * 10; p.y = DECK_Y - 14; p.dir = c.dir; p.vx = 0; p.vy = 0; p.rot = 0;
+    p.x = c.x - c.dir * 10; p.y = dk - 14; p.dir = c.dir; p.vx = 0; p.vy = 0; p.rot = 0;
     p.stateT--;
     if (rising || p.stateT <= 0) {            // takeoff needs a fresh key press, not a held key                       // take off; colour alternates every launch
       p.state = 'fly'; S.launches++; p.colorIdx = (S.launches + S.round) % 2; p.vx = p.dir * TUNE.PLANE_CRUISE; p.vy = -2.4;
@@ -287,11 +302,11 @@ function planeStep(S, k) {
   if (p.state === 'down') {
     p.rot += 0.18 * p.dir; p.vy += 0.1; p.x += p.vx * 0.5; p.y += p.vy;
     if (S.t % 3 === 0) puff(S, p.x, p.y, { vy: -0.4, life: 40, max: 40, size: 6, grow: 0.2, color: '#3a3a3a', kind: 'smoke' });
-    if (p.y >= DECK_Y + 10) { splash(S, p.x, DECK_Y + 24); p.state = 'sunk'; p.stateT = 70; }
+    if (p.y >= dk + 10) { splash(S, p.x, dk + 24); p.state = 'sunk'; p.stateT = 70; }
     return;
   }
   if (p.state === 'sunk') {
-    if (--p.stateT <= 0) { p.state = 'deck'; p.stateT = 90; p.hp = TUNE.PLANE_HP; p.trail.length = 0; banner(S, 'PLANE READY!', 70); }
+    if (--p.stateT <= 0) { p.state = 'deck'; p.stateT = 90; p.hp = TUNE.PLANE_HP; p.ammo = TUNE.PLANE_MISSILES; p.trail.length = 0; banner(S, 'PLANE READY!', 70); }
     return;
   }
   // flying: it cruises on its own; Left/Right turn it (and push it faster), Up/Down climb and dive
@@ -305,7 +320,7 @@ function planeStep(S, k) {
   p.x += p.vx; p.y += p.vy;
   if (p.x < 40) { p.x = 40; p.dir = 1; p.bounce = 50; }
   if (p.x > W - 40) { p.x = W - 40; p.dir = -1; p.bounce = 50; }
-  p.y = clamp(p.y, TOP_SAFE, DECK_Y - 30);
+  p.y = clamp(p.y, TOP_SAFE, dk - 30);
   p.rot = p.vy * 0.06 * p.dir;
   if (S.t % 2 === 0) { p.trail.push({ x: p.x - p.dir * 28, y: p.y }); if (p.trail.length > 26) p.trail.shift(); }
 
@@ -314,9 +329,17 @@ function planeStep(S, k) {
     S.bullets.push({ x: p.x + p.dir * 34, y: p.y, vx: p.dir * TUNE.BULLET_SPEED + p.vx * 0.3, vy: 0, life: 70 });
     say(S, 'gun');
   }
-  // a pass over the deck repairs one hit (no landing needed)
-  if (p.dockCd <= 0 && Math.abs(p.x - c.x) < c.w / 2 + 20 && p.y > DECK_Y - 120 && p.hp < TUNE.PLANE_HP) {
-    p.hp++; p.dockCd = TUNE.DOCK_COOLDOWN; p.dockFlash = 40; say(S, 'dock'); banner(S, 'REPAIRED!', 60);
+  if (k.missile && p.mcool <= 0 && p.ammo > 0) {      // air-to-surface missile: points down the way the plane faces
+    p.mcool = TUNE.PLANE_MISSILE_COOLDOWN; p.ammo--;
+    S.missiles.push({ x: p.x + p.dir * 22, y: p.y + 8, ang: p.dir > 0 ? 0.45 : Math.PI - 0.45, owner: 'p', cone: TUNE.PLANE_CONE_DEG * DEG, life: 260 });
+    say(S, 'missile');
+  }
+  // a pass over the deck repairs one hit and reloads the missiles (no landing needed)
+  if (p.dockCd <= 0 && Math.abs(p.x - c.x) < c.w / 2 + 20 && p.y > dk - 120 && (p.hp < TUNE.PLANE_HP || p.ammo < TUNE.PLANE_MISSILES)) {
+    const fixed = p.hp < TUNE.PLANE_HP;
+    if (fixed) p.hp++;
+    p.ammo = TUNE.PLANE_MISSILES; p.dockCd = TUNE.DOCK_COOLDOWN; p.dockFlash = 40; say(S, 'dock');
+    banner(S, fixed ? 'REPAIRED + RELOADED!' : 'RELOADED!', 60);
   }
   // ramming a bogie hurts both
   for (const b of S.bogies) {
@@ -334,7 +357,7 @@ function shipsStep(S) {
     if (s.x > 600) s.dir = -1;
     if (--s.fireT <= 0) { s.warn = 36; s.fireT = 260 + S.rng() * 200; }
     if (s.warn > 0 && --s.warn === 0) {
-      const tx = c.x + (S.rng() - 0.5) * 60, ty = DECK_Y - 8, T = 100, g = 0.06;
+      const tx = c.x + (S.rng() - 0.5) * 60, ty = DECK_Y + c.dy - 8, T = 100, g = 0.06;
       S.enemyShots.push({ kind: 'shell', x: s.x, y: s.y - 14, vx: (tx - s.x) / T, vy: (ty - (s.y - 14)) / T - 0.5 * g * T, g, life: 140 });
       say(S, 'shellfire');
     }
@@ -404,20 +427,22 @@ function projectilesStep(S) {
   }
   S.flak = S.flak.filter(f => f.life > 0);
 
-  // missiles (home on a ground target)
+  // missiles fly where they were pointed; they only steer if a target is already inside their cone
   for (const m of S.missiles) {
     m.life--;
-    if (!m.tgt || m.tgt.sinking || m.tgt.dead) m.tgt = pickTarget(S, m.x, Math.cos(m.ang) >= 0 ? 1 : -1);
-    if (m.tgt) {
-      const want = Math.atan2(m.tgt.y - m.y, m.tgt.x - m.x);
-      let d = want - m.ang;
+    let best = null, bd = 99;
+    for (const t of groundTargets(S)) {
+      let d = Math.atan2(t.y - m.y, t.x - m.x) - m.ang;
       while (d > Math.PI) d -= 2 * Math.PI;
       while (d < -Math.PI) d += 2 * Math.PI;
-      m.ang += clamp(d, -0.07, 0.07);
+      if (Math.abs(d) < m.cone && Math.abs(d) < bd) { bd = Math.abs(d); best = d; }
     }
+    if (best !== null) m.ang += clamp(best, -TUNE.HOMING, TUNE.HOMING);
     m.x += Math.cos(m.ang) * 5.4; m.y += Math.sin(m.ang) * 5.4;
     puff(S, m.x - Math.cos(m.ang) * 8, m.y - Math.sin(m.ang) * 8, { life: 24, max: 24, size: 4, grow: 0.15, color: '#d8dde8', kind: 'smoke' });
-    if (m.tgt && dist(m.x, m.y, m.tgt.x, m.tgt.y) < 26) { hitGround(S, m.tgt, TUNE.MISSILE_DMG); m.life = 0; }
+    for (const t of groundTargets(S)) {
+      if (dist(m.x, m.y, t.x, t.y) < 26) { hitGround(S, t, TUNE.MISSILE_DMG, m.owner); m.life = 0; break; }
+    }
   }
   S.missiles = S.missiles.filter(m => m.life > 0 && m.x > -40 && m.x < W + 40 && m.y > -40 && m.y < H);
 
@@ -427,8 +452,8 @@ function projectilesStep(S) {
     if (e.g) e.vy += e.g;
     e.x += e.vx; e.y += e.vy;
     if (e.kind === 'shell') {
-      if (e.vy > 0 && e.y >= DECK_Y - 8 && Math.abs(e.x - S.carrier.x) < S.carrier.w / 2 + 6) { hurtCarrier(S, e.x, e.y); e.life = 0; }
-      else if (e.y > WATER_Y + 20) { splash(S, e.x, e.y); e.life = 0; }
+      if (e.vy > 0 && e.y >= DECK_Y + S.carrier.dy - 8 && Math.abs(e.x - S.carrier.x) < S.carrier.w / 2 + 6) { hurtCarrier(S, e.x, e.y); e.life = 0; }
+      else if (e.y > WATER_Y + S.carrier.dy + 20) { splash(S, e.x, e.y); e.life = 0; }
     } else if (p.state === 'fly' && dist(e.x, e.y, p.x, p.y) < 20) { hurtPlane(S, e.x, e.y); e.life = 0; }
   }
   S.enemyShots = S.enemyShots.filter(e => e.life > 0 && e.x > -40 && e.x < W + 40 && e.y > -40 && e.y < H);
@@ -436,8 +461,8 @@ function projectilesStep(S) {
   // bombs
   for (const b of S.bombs) {
     b.vy += 0.07; b.y += b.vy;
-    if (b.y >= DECK_Y - 10 && Math.abs(b.x - S.carrier.x) < S.carrier.w / 2) { hurtCarrier(S, b.x, DECK_Y - 6); b.y = 9999; }
-    else if (b.y > WATER_Y + 10) { splash(S, b.x, b.y); b.y = 9999; }
+    if (b.y >= DECK_Y + S.carrier.dy - 10 && Math.abs(b.x - S.carrier.x) < S.carrier.w / 2) { hurtCarrier(S, b.x, DECK_Y + S.carrier.dy - 6); b.y = 9999; }
+    else if (b.y > WATER_Y + S.carrier.dy + 10) { splash(S, b.x, b.y); b.y = 9999; }
   }
   S.bombs = S.bombs.filter(b => b.y < 9000);
 }
@@ -483,7 +508,7 @@ function roleNames(round, PN) {
   return round % 2 === 0 ? { c: a, p: b } : { c: b, p: a };
 }
 
-const API = { W, H, HORIZON, DECK_Y, WATER_Y, TUNE, PLANE_COLORS, createState, step, roleNames, groundTargets, pickTarget };
+const API = { W, H, HORIZON, DECK_Y, WATER_Y, TUNE, PLANE_COLORS, createState, step, roleNames, groundTargets };
 if (typeof module !== 'undefined' && module.exports) module.exports = API;
 root.BattleFighter = API;
 
@@ -494,7 +519,7 @@ const keys = {};
 let presses = 0;
 const P1_FIRE = new Set(['Space', 'KeyZ', 'KeyX', 'KeyC', 'KeyV', 'KeyB', 'KeyN', 'KeyM', 'Comma', 'Period']);
 const GAME_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter',
-  'KeyZ', 'KeyX', 'KeyC', 'KeyV', 'KeyB', 'KeyN', 'KeyM', 'Comma', 'Period']);
+  'KeyZ', 'KeyX', 'KeyC', 'KeyV', 'KeyB', 'KeyN', 'KeyM', 'Comma', 'Period', 'KeyQ', 'KeyE', 'ShiftRight', 'Slash']);
 addEventListener('keydown', e => {
   if (GAME_KEYS.has(e.code)) e.preventDefault();
   if (!e.repeat && P1_FIRE.has(e.code)) presses++;       // each fresh press counts toward the launch
@@ -507,9 +532,9 @@ addEventListener('mousedown', e => { if (e.target.id === 'gc') presses++; });   
 
 function readInput() {
   const pr = presses; presses = 0;
-  const pk = { left: keys.ArrowLeft, right: keys.ArrowRight, up: keys.ArrowUp, down: keys.ArrowDown, fire: keys.Enter };
+  const pk = { left: keys.ArrowLeft, right: keys.ArrowRight, up: keys.ArrowUp, down: keys.ArrowDown, fire: keys.Enter, missile: keys.ShiftRight || keys.Slash };
   pk.any = !!(pk.left || pk.right || pk.up || pk.down || pk.fire);
-  return { c: { left: keys.KeyA, right: keys.KeyD, up: keys.KeyW, down: keys.KeyS, presses: pr }, p: pk };
+  return { c: { left: keys.KeyA, right: keys.KeyD, up: keys.KeyW, down: keys.KeyS, depthUp: keys.KeyQ, depthDown: keys.KeyE, presses: pr }, p: pk };
 }
 
 // ───────────────────────────── browser: sound ─────────────────────────────
@@ -679,7 +704,7 @@ function drawShip(s, t) {
 
 function drawCarrier(S, t) {
   const c = S.carrier, p = S.plane;
-  ctx.save(); ctx.translate(c.x, DECK_Y);
+  ctx.save(); ctx.translate(c.x, DECK_Y + c.dy);
   // wake / foam
   ctx.fillStyle = 'rgba(255,255,255,.4)';
   for (let i = 0; i < 6; i++) { ctx.beginPath(); ctx.ellipse(-c.dir * (118 + i * 18 + ((t * 0.8) % 18)), 44 + (i % 2) * 2, 22 - i * 2, 3, 0, 0, 6.3); ctx.fill(); }
@@ -721,11 +746,13 @@ function drawCarrier(S, t) {
     ctx.fillStyle = '#e14a3a'; ctx.fillRect(10, -4, 6, 8);
   }
   if (c.flash > 0) { ctx.fillStyle = 'rgba(255,230,120,.9)'; ctx.beginPath(); ctx.arc(50, 0, 12, 0, 6.3); ctx.fill(); }
+  ctx.strokeStyle = flak ? 'rgba(255,226,120,.6)' : 'rgba(255,255,255,.6)'; ctx.lineWidth = 2; ctx.setLineDash([3, 7]);
+  ctx.beginPath(); ctx.moveTo(56, 0); ctx.lineTo(flak ? 120 : 150, 0); ctx.stroke(); ctx.setLineDash([]);   // short aim guide
   ctx.restore();
   if (c.hit > 0 && c.hit % 4 < 2) { ctx.fillStyle = 'rgba(255,80,60,.45)'; ctx.fillRect(-124, -8, 266, 62); }
   ctx.restore();
   // charge ring above the launcher
-  const mx = c.x + c.dir * 72, my = DECK_Y - 28;
+  const mx = c.x + c.dir * 72, my = DECK_Y + c.dy - 28;
   ctx.lineWidth = 6; ctx.strokeStyle = 'rgba(0,0,0,.4)'; ctx.beginPath(); ctx.arc(mx, my - 46, 17, 0, 6.3); ctx.stroke();
   if (c.charge > 0) {
     ctx.strokeStyle = c.elev >= TUNE.FLAK_ELEV ? '#ffd23f' : '#ff6a3a'; ctx.beginPath(); ctx.arc(mx, my - 46, 17, -Math.PI / 2, -Math.PI / 2 + c.charge * 6.283); ctx.stroke();
@@ -835,18 +862,22 @@ function drawHUD(S) {
   ctx.fillStyle = 'rgba(120,160,255,.5)'; ctx.fillRect(0, 60, W, 2);
   ctx.textAlign = 'left'; ctx.font = 'bold 16px "Arial Rounded MT Bold",Arial';
   ctx.fillStyle = '#ffb36b'; ctx.fillText('⚓ ' + names.c.toUpperCase() + '  ★ ' + S.stars.c, 12, 22);
-  ctx.font = 'bold 10px Arial'; ctx.fillStyle = '#cfd8ee'; ctx.fillText('CARRIER  (WASD + mash SPACE)', 12, 36);
+  ctx.font = 'bold 10px Arial'; ctx.fillStyle = '#cfd8ee'; ctx.fillText('CARRIER  WASD • Q/E • mash SPACE', 12, 36);
   pipRow(12, 42, S.carrier.hull, TUNE.HULL, '#ffb36b', 'left');
   ctx.textAlign = 'right'; ctx.font = 'bold 16px "Arial Rounded MT Bold",Arial';
   const pc = PLANE_COLORS[S.plane.colorIdx];
   ctx.fillStyle = pc; ctx.fillText(names.p.toUpperCase() + '  ★ ' + S.stars.p + ' ✈', W - 12, 22);
-  ctx.font = 'bold 10px Arial'; ctx.fillStyle = '#cfd8ee'; ctx.fillText('FIGHTER  (ARROWS + hold ENTER)', W - 12, 36);
+  ctx.font = 'bold 10px Arial'; ctx.fillStyle = '#cfd8ee'; ctx.fillText('FIGHTER  ARROWS • ENTER • R-SHIFT', W - 12, 36);
   pipRow(W - 25, 42, S.plane.hp, TUNE.PLANE_HP, pc, 'right');
+  for (let i = 0; i < TUNE.PLANE_MISSILES; i++) {   // missile ammo
+    ctx.fillStyle = i < S.plane.ammo ? '#ffffff' : 'rgba(255,255,255,.2)'; ctx.fillRect(W - 25 - TUNE.PLANE_HP * 17 - 8 - i * 13, 42, 9, 10);
+    ctx.fillStyle = i < S.plane.ammo ? '#e14a3a' : 'rgba(225,74,58,.2)'; ctx.fillRect(W - 25 - TUNE.PLANE_HP * 17 - 8 - i * 13, 42, 9, 3);
+  }
   goalBar(W / 2 - 138, 20, '🚢 SHIPS', S.goals.ships, TUNE.GOALS.ships, '#4aa8ff');
   goalBar(W / 2, 20, '🎯 LAND', S.goals.land, TUNE.GOALS.land, '#ffb347');
   goalBar(W / 2 + 138, 20, '✈ BOGIES', S.goals.bogies, TUNE.GOALS.bogies, '#ff6a6a');
   ctx.fillStyle = '#9fb0d8'; ctx.font = '10px Arial'; ctx.textAlign = 'center';
-  ctx.fillText('carrier: ships + land   •   fighter: bogies', W / 2, 52);
+  ctx.fillText(S.phase === 'landing' ? 'ALL CLEAR — fighter: LAND ON THE CARRIER!  (carrier: slide underneath to help)' : 'carrier + fighter: ships & land   •   fighter: bogies', W / 2, 52);
 }
 
 function drawBanner(S, t) {
@@ -868,15 +899,82 @@ function drawBanner(S, t) {
   ctx.restore();
 }
 
+// Background skirmish: marines in landing boats and defenders on the beach shoot at each other. Pure decoration
+// (nobody ever gets hurt: a "hit" soldier just ducks for a moment), so it uses its own timers, not the game state.
+const SK = { men: [], shots: [], puffs: [], boats: [{ x: 590, y: 356 }, { x: 622, y: 361 }, { x: 654, y: 356 }] };
+for (let i = 0; i < 6; i++) SK.men.push({ side: 0, x: SK.boats[i >> 1].x - 6 + (i % 2) * 12, y: SK.boats[i >> 1].y - 5, fire: 20 + Math.random() * 120, duck: 0, flash: 0 });
+for (let i = 0; i < 7; i++) SK.men.push({ side: 1, x: 706 + i * 24 + (i % 2) * 4, y: 349 + (i % 3) * 1.5, fire: 20 + Math.random() * 120, duck: 0, flash: 0 });
+function skirmishStep() {
+  for (const m of SK.men) {
+    if (m.duck > 0) m.duck--;
+    if (m.flash > 0) m.flash--;
+    if (--m.fire <= 0 && m.duck <= 0) {
+      m.fire = 40 + Math.random() * 130; m.flash = 4;
+      const foes = SK.men.filter(o => o.side !== m.side), tgt = foes[(Math.random() * foes.length) | 0];
+      const a = Math.atan2(tgt.y - m.y, tgt.x - m.x);
+      SK.shots.push({ x: m.x, y: m.y - 5, vx: Math.cos(a) * 7, vy: Math.sin(a) * 7 - 0.3, tx: tgt.x, ty: tgt.y - 4, tgt, life: 60 });
+    }
+  }
+  for (const b of SK.shots) {
+    b.x += b.vx; b.y += b.vy; b.life--;
+    if (Math.abs(b.x - b.tx) < 8 || (b.vx > 0 ? b.x > b.tx : b.x < b.tx)) {
+      b.life = 0;
+      if (Math.random() < 0.3 && b.tgt.duck <= 0) b.tgt.duck = 70;               // ducks, then pops back up
+      SK.puffs.push({ x: b.tx + (Math.random() - 0.5) * 8, y: b.ty + 4, life: 18, side: b.tgt.side });
+    }
+  }
+  SK.shots = SK.shots.filter(b => b.life > 0);
+  for (const p of SK.puffs) p.life--;
+  SK.puffs = SK.puffs.filter(p => p.life > 0);
+}
+function drawSoldier(m) {
+  const dir = m.side === 0 ? 1 : -1, y = m.y + (m.duck > 0 ? 4 : 0);
+  ctx.save(); ctx.translate(m.x, y); ctx.scale(dir * 1.7, 1.7);
+  ctx.fillStyle = m.side === 0 ? '#3d6b3a' : '#7a2e2a'; ctx.fillRect(-2, -6, 4, 6);          // body
+  ctx.fillStyle = '#e8c9a0'; ctx.beginPath(); ctx.arc(0, -8, 2.2, 0, 6.3); ctx.fill();          // head
+  ctx.fillStyle = m.side === 0 ? '#2a4d28' : '#4a1c1a'; ctx.fillRect(-2.5, -11, 5, 2);           // helmet
+  if (m.duck <= 0) { ctx.fillStyle = '#222'; ctx.fillRect(1, -6, 8, 1.6); }                      // rifle
+  if (m.flash > 0 && m.duck <= 0) { ctx.fillStyle = '#ffe27a'; ctx.beginPath(); ctx.arc(11, -5.2, 2.6, 0, 6.3); ctx.fill(); }
+  ctx.restore();
+}
+function drawSkirmish(t) {
+  skirmishStep();
+  for (const b of SK.boats) {                                    // little landing boats bobbing in the shallows
+    const bob = Math.sin(t * 0.05 + b.x) * 1.2;
+    ctx.fillStyle = '#5b6470'; ctx.beginPath(); ctx.moveTo(b.x - 16, b.y + bob - 3); ctx.lineTo(b.x + 16, b.y + bob - 3); ctx.lineTo(b.x + 12, b.y + bob + 3); ctx.lineTo(b.x - 13, b.y + bob + 3); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,.4)'; ctx.fillRect(b.x - 20, b.y + bob + 3, 40, 1.5);
+  }
+  ctx.fillStyle = '#b89968';                                       // sandbags the defenders hide behind
+  for (let i = 0; i < 7; i++) { ctx.beginPath(); ctx.ellipse(706 + i * 24 + 6, 352, 8, 3, 0, 0, 6.3); ctx.fill(); }
+  for (const m of SK.men) drawSoldier(m);
+  for (const b of SK.shots) { ctx.strokeStyle = 'rgba(255,240,150,.9)'; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.moveTo(b.x - b.vx * 2, b.y - b.vy * 2); ctx.lineTo(b.x, b.y); ctx.stroke(); }
+  for (const p of SK.puffs) { ctx.fillStyle = (p.side ? 'rgba(210,180,120,' : 'rgba(220,240,255,') + p.life / 24 + ')'; ctx.beginPath(); ctx.arc(p.x, p.y - (18 - p.life) * 0.3, 2 + (18 - p.life) * 0.25, 0, 6.3); ctx.fill(); }
+}
+
+function drawLandingGuide(S) {
+  const c = S.carrier, dk = DECK_Y + c.dy, t = S.t, pulse = 0.5 + 0.5 * Math.sin(t * 0.15);
+  ctx.save();
+  ctx.strokeStyle = 'rgba(120,255,170,' + (0.5 + 0.4 * pulse) + ')'; ctx.lineWidth = 3; ctx.setLineDash([10, 8]);
+  ctx.strokeRect(c.x - c.w / 2 + 10, dk - 56, c.w - 20, 56); ctx.setLineDash([]);
+  ctx.fillStyle = 'rgba(120,255,170,' + (0.12 + 0.12 * pulse) + ')'; ctx.fillRect(c.x - c.w / 2 + 10, dk - 56, c.w - 20, 56);
+  ctx.fillStyle = '#9dffbd'; ctx.beginPath(); const ay = dk - 84 - pulse * 8;
+  ctx.moveTo(c.x - 16, ay); ctx.lineTo(c.x + 16, ay); ctx.lineTo(c.x, ay + 22); ctx.fill();
+  ctx.font = 'bold 20px Arial'; ctx.textAlign = 'center'; ctx.lineWidth = 5; ctx.strokeStyle = '#0b2a1a';
+  ctx.strokeText('LAND HERE!', c.x, ay - 8); ctx.fillText('LAND HERE!', c.x, ay - 8);
+  ctx.restore();
+}
+
 function draw(S) {
   const t = S.t;
   ctx.save();
   if (S.shake > 0) ctx.translate((Math.random() - 0.5) * S.shake, (Math.random() - 0.5) * S.shake);
   drawBackground(t);
   drawIsland(S);
+  drawSkirmish(t);
   for (const s of S.ships) drawShip(s, t);
   drawCarrier(S, t);
   const p = S.plane;
+  if (p.state === 'landed') drawPlane(p.x, p.y, p.dir, 0, PLANE_COLORS[p.colorIdx], 1, t, false);
   if (p.state === 'deck') drawPlane(p.x, p.y, p.dir, 0, PLANE_COLORS[(S.launches + 1 + S.round) % 2], 1, t, false);
   if (p.trail.length > 1 && p.state === 'fly') {
     ctx.lineCap = 'round';
@@ -890,10 +988,11 @@ function draw(S) {
   }
   drawProjectiles(S);
   drawParticles(S);
+  if (S.phase === 'landing') drawLandingGuide(S);
   ctx.restore();
   drawHUD(S);
   drawBanner(S, t);
-  if (S.phase !== 'win' && S.plane.state === 'deck' && true) {
+  if (S.phase === 'play' && S.plane.state === 'deck') {
     ctx.fillStyle = '#fff'; ctx.font = 'bold 15px Arial'; ctx.textAlign = 'center';
     ctx.fillText('FIGHTER: press an ARROW to take off (or wait a moment)!', W / 2, 108);
   }

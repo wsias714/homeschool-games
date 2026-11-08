@@ -69,12 +69,70 @@ check('charge leaks away if the carrier player stops mashing', () => {
   assert.strictEqual(S.carrier.charge, 0);
 });
 
-check('missiles sink ships and destroy land targets (carrier goals count)', () => {
-  const S = createState(6);
-  S.carrier.elev = 20; S.carrier.dir = 1;
-  for (let i = 0; i < 40 && S.goals.ships + S.goals.land < 3; i++) { step(S, { c: { presses: 3 }, p: {} }); run(S, 40); }
+function isolate(S) {   // one ship, nothing else to steer toward, nothing spawning
+  S.ships.length = 1; S.land.forEach(l => { l.dead = true; }); S.goals.ships = TUNE.GOALS.ships - 1; S.goals.land = TUNE.GOALS.land;
+}
+function elevTo(S, tg) {   // launcher elevation that points at a target
+  const c = S.carrier, mx = c.x + c.dir * 72, my = bf.DECK_Y + c.dy - 22;
+  return Math.atan2(my - tg.y, Math.abs(tg.x - mx)) * 180 / Math.PI;
+}
+check('a well-aimed missile hits; an unaimed one flies past (aiming matters)', () => {
+  const S = createState(6); isolate(S);
+  const tg = S.ships[0]; tg.speed = 0; tg.x = 520; tg.y = 360;
+  S.carrier.x = 300; S.carrier.dir = 1;
+  S.carrier.elev = elevTo(S, tg);
+  step(S, { c: { presses: 3 }, p: {} }); run(S, 120);
+  assert.strictEqual(tg.hp, TUNE.SHIP_HP - TUNE.MISSILE_DMG, 'aimed shot hit');
+  const T = createState(6); isolate(T); const t2 = T.ships[0]; t2.speed = 0; t2.x = 520; t2.y = 360;
+  T.carrier.x = 300; T.carrier.dir = 1; T.carrier.elev = 70 - 0;   // far too steep for a missile: flak mode, not a ground shot
+  T.carrier.elev = elevTo(T, t2) + 35;                              // 35 degrees too high
+  if (T.carrier.elev >= TUNE.FLAK_ELEV) T.carrier.elev = TUNE.FLAK_ELEV - 1;
+  step(T, { c: { presses: 3 }, p: {} }); run(T, 120);
+  assert.strictEqual(t2.hp, TUNE.SHIP_HP, 'a badly aimed shot misses');
+});
+
+check('carrier missiles sink ships and destroy land targets (carrier goals count)', () => {
+  const S = createState(6); S.carrier.dir = 1;
+  for (let n = 0; n < 40 && S.goals.ships + S.goals.land < 3; n++) {
+    const tg = S.land.find(l => !l.dead) || S.ships.find(s => !s.sinking);
+    S.carrier.x = clampX(tg.x - 260); S.carrier.dir = 1; S.carrier.elev = Math.min(TUNE.FLAK_ELEV - 1, Math.max(8, elevTo(S, tg)));
+    step(S, { c: { presses: 3 }, p: {} }); run(S, 80);
+  }
   assert.ok(S.goals.ships + S.goals.land >= 3, 'got ' + JSON.stringify(S.goals));
   assert.ok(S.stars.c >= 3);
+});
+function clampX(x) { return Math.max(TUNE.CARRIER_MIN, Math.min(TUNE.CARRIER_MAX, x)); }
+
+check('the plane has air-to-surface missiles: they hit ships/land, credit the plane, use ammo', () => {
+  const S = createState(31); launch(S); isolate(S);
+  const tg = S.ships[0]; tg.speed = 0; tg.x = 450; tg.y = 340; S.plane.x = 360; S.plane.y = 250; S.plane.dir = 1; S.plane.vy = 0;
+  S.plane.hit = 0; S.bogies.length = 0; S.spawnT = 99999;
+  const before = S.plane.ammo;
+  step(S, { c: {}, p: { missile: true } });
+  assert.strictEqual(S.plane.ammo, before - 1);
+  run(S, 80);
+  assert.ok(tg.hp < TUNE.SHIP_HP, 'ship hurt by the plane missile');
+  assert.ok(S.missiles.length === 0);
+  // ammo runs out, then a pass over the carrier reloads it
+  S.plane.ammo = 0; S.plane.x = S.carrier.x; S.plane.y = bf.DECK_Y - 60; S.plane.dockCd = 0; S.plane.hp = TUNE.PLANE_HP;
+  step(S, none());
+  assert.strictEqual(S.plane.ammo, TUNE.PLANE_MISSILES);
+});
+
+check('plane missile credit: sinking a ship with a plane missile gives the plane the star', () => {
+  const S = createState(32);
+  const tg = S.ships[0]; tg.hp = 1; tg.speed = 0; tg.x = 400; tg.y = 340;
+  S.missiles.push({ x: 380, y: 330, ang: 0.3, owner: 'p', cone: 0.5, life: 100 });
+  run(S, 30);
+  assert.strictEqual(S.goals.ships, 1); assert.strictEqual(S.stars.p, 1); assert.strictEqual(S.stars.c, 0);
+});
+
+check('the carrier can slide up and down a little, and stays inside its range', () => {
+  const S = createState(33);
+  run(S, 200, { c: { depthUp: true }, p: {} });
+  assert.strictEqual(S.carrier.dy, -TUNE.DEPTH_RANGE);
+  run(S, 400, { c: { depthDown: true }, p: {} });
+  assert.strictEqual(S.carrier.dy, TUNE.DEPTH_RANGE);
 });
 
 check('plane guns shoot down bogies (credit to the plane); flak credit to the carrier', () => {
@@ -143,17 +201,40 @@ check('hull gone = rally (no punishment): hull refills, goals kept', () => {
   assert.strictEqual(S.phase, 'play');
 });
 
-check('finishing every goal wins; fireworks launch; roles swap on the next round', () => {
-  const S = createState(13);
+check('finishing every goal starts "land on the carrier"; touching down wins with fireworks; roles swap next round', () => {
+  const S = createState(13); launch(S);
   S.goals = { ships: TUNE.GOALS.ships, land: TUNE.GOALS.land, bogies: TUNE.GOALS.bogies - 1 };
   S.bogies.push({ kind: 'jet', x: 500, y: 200, vx: 0, hp: 1, bob: 0, base: 200, fireT: 9999, bombT: 0, dying: null, rot: 0, vy: 0, flash: 0, dead: false });
   S.bullets.push({ x: 500, y: 200, vx: 0, vy: 0, life: 5 });
+  S.plane.x = 100; S.plane.y = 200;
   step(S, none());
-  assert.strictEqual(S.phase, 'win');
+  assert.strictEqual(S.phase, 'landing', 'not won yet: the plane must land');
+  S.plane.x = 100; S.plane.y = 200; S.plane.vx = 0; S.plane.vy = 0;
+  run(S, 30);
+  assert.strictEqual(S.phase, 'landing');
+  S.plane.x = S.carrier.x; S.plane.y = bf.DECK_Y - 40;
+  step(S, none());
+  assert.strictEqual(S.phase, 'win'); assert.strictEqual(S.plane.state, 'landed');
   run(S, 120);
   assert.ok(S.parts.some(q => q.kind === 'spark'));
   const a = bf.roleNames(0, { P1: 'A', P2: 'B' }), b = bf.roleNames(1, { P1: 'A', P2: 'B' });
   assert.strictEqual(a.c, b.p); assert.strictEqual(a.p, b.c);
+});
+
+check('landing: the autopilot helps after a while, and a downed plane that respawns on the deck counts as landed', () => {
+  const S = createState(34); launch(S);
+  S.goals = { ships: TUNE.GOALS.ships, land: TUNE.GOALS.land, bogies: TUNE.GOALS.bogies };
+  S.plane.x = 80; S.plane.y = 150;
+  step(S, none()); assert.strictEqual(S.phase, 'landing');
+  for (let i = 0; i < TUNE.LANDING_ASSIST + 1500 && S.phase === 'landing'; i++) step(S, none());
+  assert.strictEqual(S.phase, 'win', 'autopilot got it home');
+  const T = createState(35); launch(T);
+  T.goals = { ships: TUNE.GOALS.ships, land: TUNE.GOALS.land, bogies: TUNE.GOALS.bogies };
+  T.plane.x = 80; T.plane.y = 150;
+  step(T, none()); assert.strictEqual(T.phase, 'landing');
+  T.plane.state = 'sunk'; T.plane.stateT = 1;
+  run(T, 5);
+  assert.strictEqual(T.phase, 'win');
 });
 
 check('roles fall back to Player 1 / Player 2 when no names are set', () => {

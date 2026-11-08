@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Battle Fighter</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<canvas id="gc" width="900" height="640"></canvas>
+<div id="panel">
+  <button class="cb" id="brestart">PLAY AGAIN ↻</button>
+  <div id="hint">
+    <b>Carrier</b> (WASD): A/D sail • W/S aim • <b>mash SPACE 3 times</b> to launch — aim low = missile at ships &amp; land, aim high = flak at planes<br>
+    <b>Fighter</b> (Arrows): ←/→ turn &amp; speed up • ↑/↓ climb &amp; dive • hold ENTER to shoot bogies • fly over the carrier to get repaired
+  </div>
+  <button class="cb" id="bmute">🔊 SOUND ON</button>
+</div>
+<script src="/names.js"></script>
+<script src="game.js"></script>
+<script type="module" src="/shared/feedback-init.js"></script>
+</body>
+</html>

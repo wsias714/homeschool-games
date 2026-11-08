@@ -6,6 +6,7 @@ Small static HTML/canvas games for kitchen-table coding sessions, plus a tiny lo
 |---|---|---|
 | `times-tables` | Times Table Trail: multiplication facts as an explorer's map | live |
 | `cannon-battle` | Battleship-style harbour battle, aim with numbers | live |
+| `battle-fighter` | 2-player co-op: one runs the aircraft carrier, one flies the fighter | live |
 | `sound-it-out` | Say a word, rebuild it from scrambled letters, hear it sounded out | live |
 | `dino-roar` | 2-player co-op dino-lab defense | archived |
 | `space-blasters` | 2-player co-op space shooter | archived |

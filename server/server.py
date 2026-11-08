@@ -92,7 +92,7 @@ class GameHandler(SimpleHTTPRequestHandler):
             return
 
         # Redirect /game-name/ to /game-name/index.html
-        if path in ['/', '/space-blasters', '/dino-roar', '/train-racer', '/sound-it-out', '/times-tables', '/cannon-battle']:
+        if path in ['/', '/space-blasters', '/dino-roar', '/train-racer', '/sound-it-out', '/times-tables', '/cannon-battle', '/battle-fighter']:
             game = path.strip('/') or 'index'
             if game != 'index':
                 path = f'/{game}/index.html'
@@ -116,6 +116,9 @@ class GameHandler(SimpleHTTPRequestHandler):
         elif path.startswith('/cannon-battle/') or path == '/cannon-battle':
             self.path = path.replace('/cannon-battle', '', 1) or '/index.html'
             self.directory = str(GAME_ROOT / 'cannon-battle')
+        elif path.startswith('/battle-fighter/') or path == '/battle-fighter':
+            self.path = path.replace('/battle-fighter', '', 1) or '/index.html'
+            self.directory = str(GAME_ROOT / 'battle-fighter')
         elif path.startswith('/shared/'):
             self.path = path.replace('/shared', '', 1)
             self.directory = str(GAME_ROOT / 'shared')

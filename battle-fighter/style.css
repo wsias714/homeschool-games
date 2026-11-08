@@ -30,3 +30,5 @@ body{
 .cb:active{transform:translateY(3px);box-shadow:0 1px 0 rgba(0,0,0,.4);}
 #hint{font-size:11px;line-height:1.5;color:#8fa0d8;text-align:center;flex:1;}
 #hint b{color:#ffb36b;}
+.btns{display:flex;flex-direction:column;gap:6px;}
+.cb.small{height:28px;font-size:11px;background:#2f8f5a;}

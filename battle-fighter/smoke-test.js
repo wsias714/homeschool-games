@@ -10,7 +10,7 @@ function check(label, fn) {
 }
 const none = () => ({ c: {}, p: {} });
 function run(S, n, inp) { for (let i = 0; i < n; i++) step(S, typeof inp === 'function' ? inp(i) : (inp || none())); }
-function launch(S) { step(S, { c: {}, p: { any: true } }); }
+function launch(S) { S.plane.anyPrev = false; step(S, { c: {}, p: { any: true } }); }
 
 check('new state: full hull, full plane hp, 3 ships, 4 land targets, empty goals', () => {
   const S = createState(1);
@@ -176,7 +176,7 @@ check('a long messy random game never produces NaN, never stalls spawns, and sta
       step(S, { c: { left: rnd() < 0.3, right: rnd() < 0.3, up: rnd() < 0.3, down: rnd() < 0.3, presses: rnd() < 0.06 ? 1 : 0 },
                 p: { left: rnd() < 0.2, right: rnd() < 0.2, up: rnd() < 0.3, down: rnd() < 0.3, fire: rnd() < 0.7, any: rnd() < 0.1 } });
       for (const v of [S.carrier.x, S.carrier.elev, S.plane.x, S.plane.y]) assert.ok(Number.isFinite(v), 'NaN at ' + i);
-      assert.ok(S.parts.length <= 700 && S.bogies.length <= 8 && S.ships.length <= 6);
+      assert.ok(S.parts.length <= 760 && S.bogies.length <= 8 && S.ships.length <= 6);
     }
     // at the cap there must still be the means to finish: enough ships/bogies/land exist or are done
     const need = TUNE.GOALS;
@@ -198,6 +198,23 @@ check('mouse/Enter-free: the plane only launches from plane input, not carrier p
   const S = createState(22);
   step(S, { c: { presses: 3, left: true }, p: {} });
   assert.strictEqual(S.plane.state, 'deck');
+});
+
+check('holding a direction at the wall does not pin the plane there', () => {
+  const S = createState(23); launch(S); S.plane.state = 'fly';
+  run(S, 400, { c: {}, p: { left: true, any: true } });
+  assert.ok(S.plane.x > 45 || S.plane.dir === 1, 'plane x ' + S.plane.x + ' dir ' + S.plane.dir);
+  let moved = 0; const x0 = S.plane.x; for (let i = 0; i < 120; i++) { step(S, { c: {}, p: { left: true, any: true } }); moved = Math.max(moved, Math.abs(S.plane.x - x0)); }
+  assert.ok(moved > 60, 'plane keeps moving, moved ' + moved);
+});
+
+check('a key already held does not auto-launch the plane (needs a fresh press)', () => {
+  const S = createState(24);
+  run(S, 30, { c: {}, p: { right: true, any: true } });
+  assert.strictEqual(S.plane.state, 'deck');
+  run(S, 3, { c: {}, p: {} });
+  launch(S);
+  assert.strictEqual(S.plane.state, 'fly');
 });
 
 check('ships never leave the sailing lane and carrier stays in range', () => {

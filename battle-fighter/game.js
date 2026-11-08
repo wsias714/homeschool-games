@@ -49,7 +49,7 @@ function createState(seed, round) {
     t: 0, round, phase: 'play', phaseT: 0, rally: 0, launches: 0,
     carrier: { x: 300, dir: 1, elev: 24, charge: 0, idle: 0, hull: TUNE.HULL, hit: 0, w: 220, recoil: 0, flash: 0 },
     plane: { state: 'deck', stateT: 90, x: 300, y: DECK_Y - 14, vx: 0, vy: 0, dir: 1, hp: TUNE.PLANE_HP, hit: 0,
-             colorIdx: (round + 1) % 2, rot: 0, cool: 0, dockCd: 0, trail: [], dockFlash: 0 },
+             colorIdx: (round + 1) % 2, rot: 0, cool: 0, dockCd: 0, trail: [], dockFlash: 0, anyPrev: true, bounce: 0 },
     bogies: [], ships: [], land: [],
     missiles: [], flak: [], bullets: [], enemyShots: [], bombs: [],
     parts: [], splashes: [],
@@ -269,6 +269,7 @@ function carrierStep(S, k) {
 
 function planeStep(S, k) {
   const p = S.plane, c = S.carrier;
+  const rising = !!k.any && !p.anyPrev; p.anyPrev = !!k.any;
   if (p.hit > 0) p.hit--;
   if (p.dockCd > 0) p.dockCd--;
   if (p.dockFlash > 0) p.dockFlash--;
@@ -277,7 +278,7 @@ function planeStep(S, k) {
   if (p.state === 'deck') {
     p.x = c.x - c.dir * 10; p.y = DECK_Y - 14; p.dir = c.dir; p.vx = 0; p.vy = 0; p.rot = 0;
     p.stateT--;
-    if (k.any || p.stateT <= 0) {                       // take off; colour alternates every launch
+    if (rising || p.stateT <= 0) {            // takeoff needs a fresh key press, not a held key                       // take off; colour alternates every launch
       p.state = 'fly'; S.launches++; p.colorIdx = (S.launches + S.round) % 2; p.vx = p.dir * TUNE.PLANE_CRUISE; p.vy = -2.4;
       p.hit = 40; p.trail.length = 0; say(S, 'launch');
     }
@@ -294,16 +295,16 @@ function planeStep(S, k) {
     return;
   }
   // flying: it cruises on its own; Left/Right turn it (and push it faster), Up/Down climb and dive
-  if (k.left) p.dir = -1;
-  if (k.right) p.dir = 1;
+  if (p.bounce > 0) p.bounce--;            // after bouncing off an edge, keys can't steer back into it for a moment
+  else { if (k.left) p.dir = -1; if (k.right) p.dir = 1; }
   const boosting = (k.left && p.dir < 0) || (k.right && p.dir > 0);
   const tv = p.dir * (boosting ? TUNE.PLANE_BOOST : TUNE.PLANE_CRUISE);
   p.vx += (tv - p.vx) * 0.08;
   const ty = (k.up ? -TUNE.PLANE_CLIMB : 0) + (k.down ? TUNE.PLANE_CLIMB : 0);
   p.vy += (ty - p.vy) * 0.12;
   p.x += p.vx; p.y += p.vy;
-  if (p.x < 40) { p.x = 40; p.dir = 1; }
-  if (p.x > W - 40) { p.x = W - 40; p.dir = -1; }
+  if (p.x < 40) { p.x = 40; p.dir = 1; p.bounce = 50; }
+  if (p.x > W - 40) { p.x = W - 40; p.dir = -1; p.bounce = 50; }
   p.y = clamp(p.y, TOP_SAFE, DECK_Y - 30);
   p.rot = p.vy * 0.06 * p.dir;
   if (S.t % 2 === 0) { p.trail.push({ x: p.x - p.dir * 28, y: p.y }); if (p.trail.length > 26) p.trail.shift(); }
@@ -491,14 +492,14 @@ if (typeof document === 'undefined' || !document.getElementById('gc')) return;
 
 const keys = {};
 let presses = 0;
-const P1_FIRE = new Set(['Space', 'KeyZ', 'KeyX', 'KeyC', 'KeyV', 'KeyB', 'KeyN', 'KeyM', 'Comma', 'Period', 'AltLeft', 'ControlLeft']);
+const P1_FIRE = new Set(['Space', 'KeyZ', 'KeyX', 'KeyC', 'KeyV', 'KeyB', 'KeyN', 'KeyM', 'Comma', 'Period']);
 const GAME_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter',
-  'KeyZ', 'KeyX', 'KeyC', 'KeyV', 'KeyB', 'KeyN', 'KeyM', 'Comma', 'Period', 'AltLeft', 'ControlLeft']);
+  'KeyZ', 'KeyX', 'KeyC', 'KeyV', 'KeyB', 'KeyN', 'KeyM', 'Comma', 'Period']);
 addEventListener('keydown', e => {
   if (GAME_KEYS.has(e.code)) e.preventDefault();
   if (!e.repeat && P1_FIRE.has(e.code)) presses++;       // each fresh press counts toward the launch
   keys[e.code] = true; ensureAudio();
-  if (e.code === 'KeyR' && S.phase === 'win') restart();
+  if (!e.repeat && e.code === 'KeyR' && S.phase === 'win') restart();
 });
 addEventListener('keyup', e => { keys[e.code] = false; });
 addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
@@ -892,14 +893,15 @@ function draw(S) {
   ctx.restore();
   drawHUD(S);
   drawBanner(S, t);
-  if (S.phase !== 'win' && S.plane.state === 'deck' && S.t < 400) {
+  if (S.phase !== 'win' && S.plane.state === 'deck' && true) {
     ctx.fillStyle = '#fff'; ctx.font = 'bold 15px Arial'; ctx.textAlign = 'center';
-    ctx.fillText('FIGHTER: press any ARROW to take off!', W / 2, 108);
+    ctx.fillText('FIGHTER: press an ARROW to take off (or wait a moment)!', W / 2, 108);
   }
 }
 
 // ───────────────────────────── browser: loop ─────────────────────────────
-function newGame() { S = createState((Date.now() & 0xffff) + 1, round); }
+function clearInput() { for (const k in keys) keys[k] = false; presses = 0; }
+function newGame() { clearInput(); S = createState((Date.now() & 0xffff) + 1, round); }
 function restart() { round++; newGame(); }
 function playEvents() {
   const seen = {};

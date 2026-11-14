@@ -698,6 +698,11 @@ if (typeof document !== 'undefined' && document.getElementById && document.getEl
       svg.innerHTML = '';
       svg.setAttribute('viewBox', '0 0 ' + NL.w + ' 130');
       nlEl('line', { x1: nlX(0), y1: y, x2: nlX(plan.max), y2: y, stroke: '#cfd0ff', 'stroke-width': 3, 'stroke-linecap': 'round' });
+      // one notch per whole number so the child can count by 1; every 5th is taller
+      for (var n = 1; n <= plan.max; n++) {
+        var nh = n % 5 === 0 ? 7 : 4;
+        nlEl('line', { x1: nlX(n), y1: y - nh, x2: nlX(n), y2: y + nh, stroke: '#8a8cc0', 'stroke-width': 1 });
+      }
       nlEl('line', { x1: nlX(0), y1: y - 7, x2: nlX(0), y2: y + 7, stroke: '#8a8cc0', 'stroke-width': 2 });
       nlEl('text', { x: nlX(0), y: y + 24, 'text-anchor': 'middle', fill: '#dde', 'font-size': 13 }, 0);
       for (var i = 0; i < plan.stops.length; i++) {
